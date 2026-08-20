@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hlaunch.local/schemas/config.schema.json",
+  "title": "HLaunch config.json v1",
+  "type": "object",
+  "required": ["schemaVersion", "activation"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "activation": {
+      "type": "object",
+      "required": ["hotkey", "screenEdge"],
+      "properties": {
+        "hotkey": {
+          "type": "object",
+          "required": ["enabled", "modifiers", "key", "behavior"],
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "modifiers": {
+              "type": "array",
+              "items": { "enum": ["alt", "control", "shift", "win"] },
+              "uniqueItems": true,
+              "default": ["alt"]
+            },
+            "key": { "type": "string", "minLength": 1, "maxLength": 32, "default": "Space" },
+            "behavior": { "const": "toggle" }
+          },
+          "additionalProperties": true
+        },
+        "screenEdge": {
+          "type": "object",
+          "required": ["enabled", "zones", "edgeMode", "thicknessDip", "cornerSizeDip", "dwellMs", "pollMs", "cooldownMs", "disableOnFullscreen"],
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "zones": {
+              "type": "array",
+              "items": { "enum": ["left", "right", "top", "bottom", "topLeft", "topRight", "bottomLeft", "bottomRight"] },
+              "minItems": 1,
+              "uniqueItems": true,
+              "default": ["left"]
+            },
+            "edgeMode": { "enum": ["desktopOuter", "everyMonitor"], "default": "desktopOuter" },
+            "thicknessDip": { "type": "number", "minimum": 2, "maximum": 16, "default": 4 },
+            "cornerSizeDip": { "type": "number", "minimum": 8, "maximum": 64, "default": 16 },
+            "dwellMs": { "type": "integer", "minimum": 100, "maximum": 1000, "default": 300 },
+            "pollMs": { "type": "integer", "minimum": 30, "maximum": 50, "default": 40 },
+            "cooldownMs": { "type": "integer", "minimum": 0, "maximum": 5000, "default": 500 },
+            "disableOnFullscreen": { "type": "boolean", "default": true }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

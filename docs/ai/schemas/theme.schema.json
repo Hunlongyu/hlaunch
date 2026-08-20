@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hlaunch.local/schemas/theme.schema.json",
+  "title": "HLaunch theme.json v1",
+  "type": "object",
+  "required": ["schemaVersion", "id", "name", "colors", "metrics", "typography", "images"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "colors": {
+      "type": "object",
+      "required": ["background", "surface", "text", "textMuted", "accent", "hover", "pressed", "border", "focus"],
+      "additionalProperties": false,
+      "properties": {
+        "background": { "$ref": "#/$defs/color" },
+        "surface": { "$ref": "#/$defs/color" },
+        "text": { "$ref": "#/$defs/color" },
+        "textMuted": { "$ref": "#/$defs/color" },
+        "accent": { "$ref": "#/$defs/color" },
+        "hover": { "$ref": "#/$defs/color" },
+        "pressed": { "$ref": "#/$defs/color" },
+        "border": { "$ref": "#/$defs/color" },
+        "focus": { "$ref": "#/$defs/color" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["cornerRadiusDip", "itemWidthDip", "itemHeightDip", "gapDip", "paddingDip"],
+      "additionalProperties": false,
+      "properties": {
+        "cornerRadiusDip": { "type": "number", "minimum": 0, "maximum": 32 },
+        "itemWidthDip": { "type": "number", "minimum": 48, "maximum": 256 },
+        "itemHeightDip": { "type": "number", "minimum": 48, "maximum": 256 },
+        "gapDip": { "type": "number", "minimum": 0, "maximum": 64 },
+        "paddingDip": { "type": "number", "minimum": 0, "maximum": 64 }
+      }
+    },
+    "typography": {
+      "type": "object",
+      "required": ["fontFamily", "fontSizeDip"],
+      "additionalProperties": false,
+      "properties": {
+        "fontFamily": { "type": ["string", "null"], "maxLength": 128 },
+        "fontSizeDip": { "type": "number", "minimum": 9, "maximum": 32 }
+      }
+    },
+    "images": {
+      "type": "object",
+      "required": ["background", "preview"],
+      "additionalProperties": false,
+      "properties": {
+        "background": { "$ref": "#/$defs/imagePath" },
+        "preview": { "$ref": "#/$defs/imagePath" }
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "color": { "type": "string", "pattern": "^#(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$" },
+    "imagePath": { "type": ["string", "null"], "maxLength": 260 }
+  }
+}

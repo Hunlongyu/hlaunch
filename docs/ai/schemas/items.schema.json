@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hlaunch.local/schemas/items.schema.json",
+  "title": "HLaunch items.json v1",
+  "type": "object",
+  "required": ["schemaVersion", "tabs"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "tabs": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/tab" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "nullableString": {
+      "type": ["string", "null"],
+      "maxLength": 32768
+    },
+    "tab": {
+      "type": "object",
+      "required": ["id", "name", "items"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "items": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/item" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "item": {
+      "type": "object",
+      "required": ["id", "type", "name", "target", "arguments", "workingDirectory", "icon", "runAsAdministrator", "launchCount", "lastLaunchedAt"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "type": { "enum": ["application", "file", "folder", "url", "shortcut"] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "target": { "type": "string", "minLength": 1, "maxLength": 32768 },
+        "arguments": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "type": "string", "maxLength": 32768 }
+        },
+        "workingDirectory": { "$ref": "#/$defs/nullableString" },
+        "icon": { "$ref": "#/$defs/nullableString" },
+        "runAsAdministrator": { "type": "boolean" },
+        "launchCount": { "type": "integer", "minimum": 0 },
+        "lastLaunchedAt": { "type": ["string", "null"], "format": "date-time" }
+      },
+      "additionalProperties": true
+    }
+  }
+}
