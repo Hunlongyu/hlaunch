@@ -6,7 +6,9 @@
 #include "platform/windows/uuid.h"
 #include "ui/item_context_menu.h"
 #include "ui/item_editor_dialog.h"
+#include "ui/launcher_context_menu.h"
 #include "ui/launcher_layout.h"
+#include "ui/text_prompt_dialog.h"
 #include "ui/theme.h"
 
 #include <d2d1helper.h>
@@ -14,6 +16,7 @@
 #include <wil/resource.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <iterator>
@@ -27,12 +30,13 @@ namespace hlaunch::ui {
 namespace {
 
 constexpr wchar_t launcherWindowClass[] = L"HLaunch.LauncherWindow.v1";
-constexpr float cornerRadius = 12.0F;
-constexpr int launcherWidthDip = 420;
-constexpr int launcherHeightDip = 640;
+constexpr float cornerRadius = 2.0F;
+constexpr int launcherWidthDip = 394;
+constexpr int launcherHeightDip = 605;
 
-constexpr std::size_t maximumVisibleItems = 25;
+constexpr std::size_t maximumVisibleItems = 40;
 constexpr std::size_t maximumIconCacheEntries = 128;
+constexpr UINT_PTR autoHideTimer = 1;
 constexpr UINT dropImportCompletedMessage = WM_APP + 0x43U;
 constexpr UINT iconLoadCompletedMessage = WM_APP + 0x44U;
 std::wstring utf8ToWide(const std::string_view value)
@@ -59,6 +63,26 @@ std::wstring utf8ToWide(const std::string_view value)
             result.data(),
             required) != required) {
         return L"?";
+    }
+    return result;
+}
+
+std::optional<std::string> wideToUtf8(const std::wstring_view value)
+{
+    if (value.empty()) {
+        return std::string{};
+    }
+    const int required = WideCharToMultiByte(
+        CP_UTF8, WC_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()),
+        nullptr, 0, nullptr, nullptr);
+    if (required <= 0) {
+        return std::nullopt;
+    }
+    std::string result(static_cast<std::size_t>(required), '\0');
+    if (WideCharToMultiByte(
+            CP_UTF8, WC_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()),
+            result.data(), required, nullptr, nullptr) != required) {
+        return std::nullopt;
     }
     return result;
 }
@@ -141,7 +165,7 @@ bool LauncherWindow::create(
     activeTabIndex_ = 0;
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(WNDCLASSEXW);
-    windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW;
+    windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW | CS_DBLCLKS;
     windowClass.lpfnWndProc = &LauncherWindow::windowProcedure;
     windowClass.hInstance = instance;
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
@@ -158,7 +182,7 @@ bool LauncherWindow::create(
     const auto x = workArea.left + ((workArea.right - workArea.left - width) / 2);
     const auto y = workArea.top + ((workArea.bottom - workArea.top - height) / 2);
     window_ = CreateWindowExW(
-        WS_EX_APPWINDOW,
+        WS_EX_TOOLWINDOW,
         launcherWindowClass,
         L"HLaunch",
         WS_POPUP,
@@ -267,9 +291,17 @@ void LauncherWindow::setItemEditorHandler(ItemEditorHandler handler)
     itemEditorHandler_ = std::move(handler);
 }
 
+void LauncherWindow::setSettingsHandler(SettingsHandler handler)
+{
+    settingsHandler_ = std::move(handler);
+}
+
 void LauncherWindow::show()
 {
-    positionOnCursorMonitor();
+    if (!hasPositioned_) {
+        positionOnCursorMonitor();
+        hasPositioned_ = true;
+    }
     ShowWindow(window_, SW_SHOWNORMAL);
     if (searchVisible_) {
         positionSearchWindow();
@@ -291,6 +323,7 @@ void LauncherWindow::show()
 void LauncherWindow::showAtScreenEdge(const activation::ScreenEdgeHit& hit)
 {
     positionOnScreenEdge(hit);
+    hasPositioned_ = true;
     ShowWindow(window_, SW_SHOWNORMAL);
     if (searchVisible_) {
         positionSearchWindow();
@@ -476,10 +509,37 @@ LRESULT LauncherWindow::handleMessage(
         windowFocused_ = false;
         InvalidateRect(window_, nullptr, FALSE);
         return 0;
+    case WM_ACTIVATE:
+        if (LOWORD(wParam) == WA_INACTIVE) {
+            scheduleAutoHide();
+        }
+        else {
+            KillTimer(window_, autoHideTimer);
+        }
+        return 0;
+    case WM_TIMER:
+        if (wParam == autoHideTimer) {
+            KillTimer(window_, autoHideTimer);
+            if (!windowLocked_ && isVisible()) {
+                DWORD foregroundProcess{};
+                GetWindowThreadProcessId(GetForegroundWindow(), &foregroundProcess);
+                if (foregroundProcess != GetCurrentProcessId()) {
+                    hide();
+                }
+            }
+            return 0;
+        }
+        return DefWindowProcW(window_, message, wParam, lParam);
     case WM_KEYDOWN:
         return handleKeyDown(wParam)
             ? 0
             : DefWindowProcW(window_, message, wParam, lParam);
+    case WM_SYSKEYDOWN:
+        if (wParam == VK_F4) {
+            close();
+            return 0;
+        }
+        return DefWindowProcW(window_, message, wParam, lParam);
     case WM_CHAR:
         if (wParam >= 0x20 && wParam != 0x7F) {
             beginSearch(std::wstring(1, static_cast<wchar_t>(wParam)));
@@ -503,7 +563,9 @@ LRESULT LauncherWindow::handleMessage(
         }
         return 0;
     case WM_MOUSEWHEEL:
-        handleMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+        handleMouseWheel(
+            GET_WHEEL_DELTA_WPARAM(wParam),
+            POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
         return 0;
     case WM_LBUTTONDOWN: {
         if (isSearchFiltering()) {
@@ -537,6 +599,29 @@ LRESULT LauncherWindow::handleMessage(
             return 0;
         }
         return DefWindowProcW(window_, message, wParam, lParam);
+    case WM_LBUTTONDBLCLK: {
+        if (isSearchFiltering()) {
+            return 0;
+        }
+        RECT client{};
+        GetClientRect(window_, &client);
+        const float xDip = static_cast<float>(GET_X_LPARAM(lParam)) * 96.0F
+            / static_cast<float>(dpi_);
+        const float yDip = static_cast<float>(GET_Y_LPARAM(lParam)) * 96.0F
+            / static_cast<float>(dpi_);
+        const auto layout = calculateLauncherLayout({
+            .clientWidthDip = static_cast<float>(client.right) * 96.0F
+                / static_cast<float>(dpi_),
+            .clientHeightDip = static_cast<float>(client.bottom) * 96.0F
+                / static_cast<float>(dpi_),
+            .itemCount = displayedTileCount(),
+        });
+        if (const auto slot = hitTestLauncherItem(layout, xDip, yDip);
+            slot && *slot >= visibleItemCount()) {
+            showAddEditor();
+        }
+        return 0;
+    }
     case WM_NCHITTEST: {
         POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         ScreenToClient(window_, &point);
@@ -588,9 +673,26 @@ LRESULT LauncherWindow::handleMessage(
             displayedTileCount(),
         });
         const auto& closeButton = layout.closeButton;
+        const auto contains = [xDip, yDip](const RectDip& rectangle) {
+            return xDip >= rectangle.x && xDip < rectangle.x + rectangle.width
+                && yDip >= rectangle.y && yDip < rectangle.y + rectangle.height;
+        };
+        if (contains(layout.menuButton)) {
+            POINT screenPoint{
+                static_cast<LONG>(std::lround(layout.menuButton.x)),
+                static_cast<LONG>(std::lround(
+                    layout.menuButton.y + layout.menuButton.height))};
+            ClientToScreen(window_, &screenPoint);
+            showLauncherContextMenu(screenPoint);
+            return 0;
+        }
+        if (contains(layout.lockButton)) {
+            toggleWindowLock();
+            return 0;
+        }
         if (xDip >= closeButton.x && xDip < closeButton.x + closeButton.width
             && yDip >= closeButton.y && yDip < closeButton.y + closeButton.height) {
-            DestroyWindow(window_);
+            hide();
             return 0;
         }
         if (!isSearchFiltering()) {
@@ -616,9 +718,6 @@ LRESULT LauncherWindow::handleMessage(
                 InvalidateRect(window_, nullptr, FALSE);
                 launchHandler_(*displayed->item);
             }
-            else if (!isSearchFiltering() && *itemIndex >= visibleItemCount()) {
-                showAddEditor();
-            }
         }
         return 0;
     }
@@ -637,11 +736,23 @@ LRESULT LauncherWindow::handleMessage(
             .clientHeightDip = static_cast<float>(client.bottom) * 96.0F / static_cast<float>(dpi_),
             .itemCount = displayedTileCount(),
         });
-        if (const auto itemIndex = hitTestLauncherItem(layout, xDip, yDip);
-            itemIndex && *itemIndex < visibleItemCount()) {
-            POINT screenPoint{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-            ClientToScreen(window_, &screenPoint);
-            showItemContextMenu(pageOffset_ + *itemIndex, screenPoint);
+        POINT screenPoint{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        ClientToScreen(window_, &screenPoint);
+        if (const auto itemIndex = hitTestLauncherItem(layout, xDip, yDip)) {
+            if (*itemIndex < visibleItemCount()) {
+                showItemContextMenu(pageOffset_ + *itemIndex, screenPoint);
+            }
+            else if (!isSearchFiltering()) {
+                showEmptySlotContextMenu(screenPoint);
+            }
+        }
+        else if (const auto tabIndex = hitTestLauncherTab(
+                     layout, document_.tabs.size(), xDip, yDip)) {
+            showTabContextMenu(*tabIndex, screenPoint);
+        }
+        else if (yDip >= layout.header.y
+                 && yDip < layout.header.y + layout.header.height) {
+            showLauncherContextMenu(screenPoint);
         }
         return 0;
     }
@@ -698,10 +809,7 @@ LRESULT LauncherWindow::handleMessage(
         return 0;
     }
     case WM_CLOSE:
-        cancelItemDrag();
-        shutdownIconServices();
-        shutdownDropServices();
-        DestroyWindow(window_);
+        hide();
         return 0;
     case WM_DESTROY:
         cancelItemDrag();
@@ -797,6 +905,7 @@ bool LauncherWindow::createDeviceIndependentResources()
         return false;
     }
     titleFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    titleFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
     bodyFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     smallFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     smallFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -921,17 +1030,53 @@ void LauncherWindow::render()
         translucentSurface_ ? (themeMode_ == core::ThemeMode::Light ? 0.88F : 0.64F) : 1.0F));
 
     const auto header = toD2dRect(layout.header);
-    renderTarget_->FillRoundedRectangle(
-        D2D1::RoundedRect(
-            D2D1::RectF(header.left, header.top + 5.0F, header.left + 18.0F, header.top + 23.0F),
-            5.0F,
-            5.0F),
-        accentBrush_.get());
+    const auto menuButton = toD2dRect(layout.menuButton);
+    for (int row = 0; row < 2; ++row) {
+        for (int column = 0; column < 2; ++column) {
+            const float x = menuButton.left + 7.0F + static_cast<float>(column) * 6.0F;
+            const float y = menuButton.top + 7.0F + static_cast<float>(row) * 6.0F;
+            renderTarget_->FillRectangle(
+                D2D1::RectF(x, y, x + 3.0F, y + 3.0F), textBrush_.get());
+        }
+    }
     drawText(
         L"HLaunch",
-        D2D1::RectF(header.left + 28.0F, header.top, header.right - 44.0F, header.bottom),
+        D2D1::RectF(
+            layout.menuButton.x + layout.menuButton.width,
+            header.top,
+            layout.lockButton.x,
+            header.bottom),
         titleFormat_.get(),
         textBrush_.get());
+
+    const auto lockButton = toD2dRect(layout.lockButton);
+    const auto lockBrush = windowLocked_ ? accentBrush_.get() : mutedTextBrush_.get();
+    renderTarget_->DrawRoundedRectangle(
+        D2D1::RoundedRect(
+            D2D1::RectF(
+                lockButton.left + 7.0F,
+                lockButton.top + 10.0F,
+                lockButton.right - 7.0F,
+                lockButton.bottom - 5.0F),
+            1.0F,
+            1.0F),
+        lockBrush,
+        1.4F);
+    renderTarget_->DrawLine(
+        D2D1::Point2F(lockButton.left + 9.0F, lockButton.top + 10.0F),
+        D2D1::Point2F(lockButton.left + 9.0F, lockButton.top + 7.0F),
+        lockBrush,
+        1.4F);
+    renderTarget_->DrawLine(
+        D2D1::Point2F(lockButton.left + 9.0F, lockButton.top + 7.0F),
+        D2D1::Point2F(lockButton.right - 9.0F, lockButton.top + 7.0F),
+        lockBrush,
+        1.4F);
+    renderTarget_->DrawLine(
+        D2D1::Point2F(lockButton.right - 9.0F, lockButton.top + 7.0F),
+        D2D1::Point2F(lockButton.right - 9.0F, lockButton.top + 10.0F),
+        lockBrush,
+        1.4F);
     const auto closeButton = toD2dRect(layout.closeButton);
     const auto closeCenter = D2D1::Point2F(
         (closeButton.left + closeButton.right) / 2.0F,
@@ -1011,12 +1156,12 @@ void LauncherWindow::render()
     for (std::size_t index = 0; index < layout.items.size(); ++index) {
         const auto absoluteIndex = pageOffset_ + index;
         const auto displayed = displayedItem(absoluteIndex);
-        const bool addTile = !filtering && index >= realItemCount;
-        const auto name = addTile || !displayed || !displayed->item
-            ? std::wstring{L"添加"}
+        const bool emptySlot = index >= realItemCount || !displayed || !displayed->item;
+        const auto name = emptySlot
+            ? std::wstring{}
             : utf8ToWide(displayed->item->name);
-        const auto glyph = addTile ? std::wstring{L"+"} : itemGlyph(name);
-        const auto color = addTile || !displayed || !displayed->item
+        const auto glyph = emptySlot ? std::wstring{} : itemGlyph(name);
+        const auto color = emptySlot
             ? 0x64748BU
             : itemColor(displayed->item->type);
         const auto tile = toD2dRect(layout.items[index]);
@@ -1043,7 +1188,7 @@ void LauncherWindow::render()
                 3.0F);
         }
         const bool keyboardFocused = windowFocused_ || GetFocus() == searchWindow_.handle();
-        if (!addTile && keyboardFocused && absoluteIndex == focusedItemIndex_) {
+        if (!emptySlot && keyboardFocused && absoluteIndex == focusedItemIndex_) {
             const auto focusBounds = D2D1::RectF(
                 tile.left + 2.0F,
                 tile.top + 2.0F,
@@ -1055,12 +1200,16 @@ void LauncherWindow::render()
                 2.0F);
         }
 
+        if (emptySlot) {
+            continue;
+        }
+
         const auto iconRect = D2D1::RectF(
-            tile.left + 14.0F,
-            tile.top + 8.0F,
-            tile.right - 14.0F,
-            tile.top + 48.0F);
-        auto* realIcon = !addTile && displayed && displayed->item
+            tile.left + 18.0F,
+            tile.top + 4.0F,
+            tile.right - 18.0F,
+            tile.top + 40.0F);
+        auto* realIcon = displayed && displayed->item
             ? itemIconBitmap(*displayed->item)
             : nullptr;
         if (realIcon) {
@@ -1076,7 +1225,7 @@ void LauncherWindow::render()
                 D2D1::ColorF(color, 0.92F),
                 iconBrush.put());
             renderTarget_->FillRoundedRectangle(
-                D2D1::RoundedRect(iconRect, 14.0F, 14.0F),
+                D2D1::RoundedRect(iconRect, 8.0F, 8.0F),
                 iconBrush ? iconBrush.get() : elevatedBrush_.get());
             drawText(
                 glyph,
@@ -1087,21 +1236,21 @@ void LauncherWindow::render()
         if (filtering && displayed && displayed->tab) {
             drawText(
                 name,
-                D2D1::RectF(tile.left + 3.0F, tile.top + 50.0F, tile.right - 3.0F, tile.top + 69.0F),
+                D2D1::RectF(tile.left + 2.0F, tile.top + 38.0F, tile.right - 2.0F, tile.top + 50.0F),
                 smallFormat_.get(),
                 textBrush_.get());
             drawText(
                 utf8ToWide(displayed->tab->name),
-                D2D1::RectF(tile.left + 3.0F, tile.top + 66.0F, tile.right - 3.0F, tile.bottom - 2.0F),
+                D2D1::RectF(tile.left + 2.0F, tile.top + 49.0F, tile.right - 2.0F, tile.bottom - 1.0F),
                 captionFormat_.get(),
                 mutedTextBrush_.get());
         }
         else {
             drawText(
                 name,
-                D2D1::RectF(tile.left + 3.0F, tile.top + 54.0F, tile.right - 3.0F, tile.bottom - 4.0F),
+                D2D1::RectF(tile.left + 2.0F, tile.top + 41.0F, tile.right - 2.0F, tile.bottom - 2.0F),
                 smallFormat_.get(),
-                addTile ? mutedTextBrush_.get() : textBrush_.get());
+                textBrush_.get());
         }
     }
     const auto totalItems = totalItemCount();
@@ -1157,6 +1306,20 @@ void LauncherWindow::render()
 
 bool LauncherWindow::handleKeyDown(const WPARAM key)
 {
+    if (key == VK_SPACE && GetKeyState(VK_CONTROL) < 0) {
+        toggleWindowLock();
+        return true;
+    }
+    if (key == L'O' && GetKeyState(VK_CONTROL) < 0) {
+        if (settingsHandler_) {
+            settingsHandler_();
+        }
+        return true;
+    }
+    if (key == VK_F4 && GetKeyState(VK_MENU) < 0) {
+        close();
+        return true;
+    }
     if (key == VK_INSERT && !isSearchFiltering()) {
         showAddEditor();
         return true;
@@ -1313,28 +1476,59 @@ void LauncherWindow::updateSearch(const std::wstring_view query)
     InvalidateRect(window_, nullptr, FALSE);
 }
 
-void LauncherWindow::handleMouseWheel(const short delta)
+void LauncherWindow::handleMouseWheel(const short delta, POINT screenPoint)
 {
     wheelDeltaRemainder_ += delta;
     const int steps = wheelDeltaRemainder_ / WHEEL_DELTA;
     wheelDeltaRemainder_ %= WHEEL_DELTA;
-    const auto capacity = pageCapacity();
-    if (steps == 0 || capacity == 0 || totalItemCount() <= capacity) {
+    if (steps == 0) {
         return;
     }
 
+    ScreenToClient(window_, &screenPoint);
     RECT client{};
     GetClientRect(window_, &client);
     const float widthDip = static_cast<float>(client.right - client.left) * 96.0F
         / static_cast<float>(dpi_);
     const float heightDip = static_cast<float>(client.bottom - client.top) * 96.0F
         / static_cast<float>(dpi_);
+    const float xDip = static_cast<float>(screenPoint.x) * 96.0F / static_cast<float>(dpi_);
+    const float yDip = static_cast<float>(screenPoint.y) * 96.0F / static_cast<float>(dpi_);
     const auto layout = calculateLauncherLayout({
+        .clientWidthDip = widthDip,
+        .clientHeightDip = heightDip,
+        .itemCount = displayedTileCount(),
+    });
+    const auto contains = [xDip, yDip](const RectDip& rectangle) {
+        return xDip >= rectangle.x && xDip < rectangle.x + rectangle.width
+            && yDip >= rectangle.y && yDip < rectangle.y + rectangle.height;
+    };
+    if (!isSearchFiltering() && document_.tabs.size() > 1U
+        && (contains(layout.header) || contains(layout.tabs))) {
+        const int direction = steps > 0 ? -1 : 1;
+        std::size_t target = activeTabIndex_;
+        for (int count = 0; count < std::abs(steps); ++count) {
+            const auto next = cycleLauncherTab(
+                target, document_.tabs.size(), direction < 0);
+            if (next) {
+                target = *next;
+            }
+        }
+        changeActiveTab(target);
+        return;
+    }
+
+    const auto capacity = pageCapacity();
+    if (capacity == 0 || totalItemCount() <= capacity) {
+        return;
+    }
+
+    const auto gridLayout = calculateLauncherLayout({
         .clientWidthDip = widthDip,
         .clientHeightDip = heightDip,
         .itemCount = 0,
     });
-    const auto rowSize = std::min(layout.columns, capacity);
+    const auto rowSize = std::min(gridLayout.columns, capacity);
     const auto rowDistance = static_cast<std::ptrdiff_t>(rowSize)
         * static_cast<std::ptrdiff_t>(-steps);
     const auto requestedOffset = static_cast<std::ptrdiff_t>(pageOffset_) + rowDistance;
@@ -1462,11 +1656,218 @@ void LauncherWindow::showItemContextMenu(
     if (selected == static_cast<UINT>(ItemContextCommand::Open)) {
         activateFocusedItem();
     }
-    else if (selected == static_cast<UINT>(ItemContextCommand::Edit)) {
+    else if (selected == static_cast<UINT>(ItemContextCommand::Properties)) {
         showEditEditor(absoluteIndex);
+    }
+    else if (selected == static_cast<UINT>(ItemContextCommand::Insert)) {
+        showAddEditor();
     }
     else if (selected == static_cast<UINT>(ItemContextCommand::Delete)) {
         deleteItem(absoluteIndex);
+    }
+}
+
+void LauncherWindow::showLauncherContextMenu(const POINT screenPoint)
+{
+    auto menu = createLauncherContextMenu(windowLocked_);
+    if (!menu) {
+        return;
+    }
+    SetForegroundWindow(window_);
+    const auto selected = TrackPopupMenuEx(
+        menu.get(), TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_WORKAREA,
+        screenPoint.x, screenPoint.y, window_, nullptr);
+    PostMessageW(window_, WM_NULL, 0, 0);
+    switch (static_cast<LauncherContextCommand>(selected)) {
+    case LauncherContextCommand::ToggleLock:
+        toggleWindowLock();
+        break;
+    case LauncherContextCommand::Search:
+        beginSearch();
+        break;
+    case LauncherContextCommand::AddPage:
+        addPage();
+        break;
+    case LauncherContextCommand::Settings:
+        if (settingsHandler_) {
+            settingsHandler_();
+        }
+        break;
+    case LauncherContextCommand::Exit:
+        close();
+        break;
+    default:
+        break;
+    }
+}
+
+void LauncherWindow::showEmptySlotContextMenu(const POINT screenPoint)
+{
+    auto menu = createEmptySlotContextMenu();
+    if (!menu) {
+        return;
+    }
+    SetForegroundWindow(window_);
+    const auto selected = TrackPopupMenuEx(
+        menu.get(), TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_WORKAREA,
+        screenPoint.x, screenPoint.y, window_, nullptr);
+    PostMessageW(window_, WM_NULL, 0, 0);
+    if (selected == static_cast<UINT>(EmptySlotContextCommand::RegisterItem)
+        || selected == static_cast<UINT>(EmptySlotContextCommand::InsertSlot)) {
+        showAddEditor();
+    }
+}
+
+void LauncherWindow::showTabContextMenu(
+    const std::size_t tabIndex,
+    const POINT screenPoint)
+{
+    if (tabIndex >= document_.tabs.size()) {
+        return;
+    }
+    changeActiveTab(tabIndex);
+    auto menu = createTabContextMenu(document_.tabs.size() > 1U);
+    if (!menu) {
+        return;
+    }
+    SetForegroundWindow(window_);
+    const auto selected = TrackPopupMenuEx(
+        menu.get(), TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_WORKAREA,
+        screenPoint.x, screenPoint.y, window_, nullptr);
+    PostMessageW(window_, WM_NULL, 0, 0);
+    switch (static_cast<TabContextCommand>(selected)) {
+    case TabContextCommand::AddPage:
+        addPage();
+        break;
+    case TabContextCommand::DeletePage:
+        deletePage(tabIndex);
+        break;
+    case TabContextCommand::Properties:
+        renamePage(tabIndex);
+        break;
+    default:
+        break;
+    }
+}
+
+void LauncherWindow::addPage()
+{
+    const auto entered = showTextPromptDialog(
+        window_, L"添加页面", L"页面名称：", L"新页面");
+    if (!entered) {
+        return;
+    }
+    const auto name = wideToUtf8(*entered);
+    auto id = platform::windows::createUuidV4();
+    if (!name || name->empty() || !id) {
+        MessageBoxW(window_, L"无法创建页面。", L"HLaunch 页面",
+                    MB_OK | MB_ICONERROR);
+        return;
+    }
+    auto updated = document_;
+    updated.tabs.push_back(core::Tab{.id = std::move(*id), .name = *name});
+    if (!core::validateItemsDocument(updated).empty()) {
+        MessageBoxW(window_, L"页面名称无效或页面数量已达到上限。", L"HLaunch 页面",
+                    MB_OK | MB_ICONWARNING);
+        return;
+    }
+    document_ = std::move(updated);
+    activeTabIndex_ = document_.tabs.size() - 1U;
+    focusedItemIndex_ = 0;
+    pageOffset_ = 0;
+    rebuildSearchIndex();
+    if (documentChangedHandler_) {
+        documentChangedHandler_(document_);
+    }
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::deletePage(const std::size_t tabIndex)
+{
+    if (document_.tabs.size() <= 1U || tabIndex >= document_.tabs.size()) {
+        return;
+    }
+    const auto& page = document_.tabs[tabIndex];
+    std::wstring prompt = L"确定删除页面“" + utf8ToWide(page.name) + L"”吗？";
+    if (!page.items.empty()) {
+        const std::size_t target = tabIndex == 0 ? 1U : 0U;
+        prompt += L"\n\n页面中的项目将移动到“";
+        prompt += utf8ToWide(document_.tabs[target].name);
+        prompt += L"”。";
+    }
+    if (MessageBoxW(window_, prompt.c_str(), L"HLaunch 删除页面",
+                    MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) {
+        return;
+    }
+
+    auto updated = document_;
+    if (!updated.tabs[tabIndex].items.empty()) {
+        const std::size_t target = tabIndex == 0 ? 1U : 0U;
+        auto& destination = updated.tabs[target].items;
+        auto& source = updated.tabs[tabIndex].items;
+        destination.insert(
+            destination.end(),
+            std::make_move_iterator(source.begin()),
+            std::make_move_iterator(source.end()));
+    }
+    updated.tabs.erase(updated.tabs.begin() + static_cast<std::ptrdiff_t>(tabIndex));
+    if (!core::validateItemsDocument(updated).empty()) {
+        MessageBoxW(window_, L"无法安全删除该页面。", L"HLaunch 页面",
+                    MB_OK | MB_ICONERROR);
+        return;
+    }
+    document_ = std::move(updated);
+    activeTabIndex_ = 0;
+    focusedItemIndex_ = 0;
+    pageOffset_ = 0;
+    rebuildSearchIndex();
+    if (documentChangedHandler_) {
+        documentChangedHandler_(document_);
+    }
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::renamePage(const std::size_t tabIndex)
+{
+    if (tabIndex >= document_.tabs.size()) {
+        return;
+    }
+    const auto entered = showTextPromptDialog(
+        window_, L"页面属性", L"页面名称：",
+        utf8ToWide(document_.tabs[tabIndex].name));
+    if (!entered) {
+        return;
+    }
+    const auto name = wideToUtf8(*entered);
+    if (!name || name->empty()) {
+        return;
+    }
+    auto updated = document_;
+    updated.tabs[tabIndex].name = *name;
+    if (!core::validateItemsDocument(updated).empty()) {
+        MessageBoxW(window_, L"页面名称无效。", L"HLaunch 页面",
+                    MB_OK | MB_ICONWARNING);
+        return;
+    }
+    document_ = std::move(updated);
+    rebuildSearchIndex();
+    if (documentChangedHandler_) {
+        documentChangedHandler_(document_);
+    }
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::toggleWindowLock()
+{
+    windowLocked_ = !windowLocked_;
+    KillTimer(window_, autoHideTimer);
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::scheduleAutoHide()
+{
+    if (!windowLocked_ && isVisible()) {
+        SetTimer(window_, autoHideTimer, 80, nullptr);
     }
 }
 
@@ -2032,19 +2433,10 @@ std::size_t LauncherWindow::visibleItemCount() const
 
 std::size_t LauncherWindow::displayedTileCount() const
 {
-    if (isSearchFiltering()) {
-        return visibleItemCount();
-    }
-    if (!activeTab()) {
+    if (!activeTab() && !isSearchFiltering()) {
         return 0;
     }
-    const auto capacity = pageCapacity();
-    const auto itemCount = visibleItemCount();
-    if (capacity == 0 || pageOffset_ + itemCount < totalItemCount()
-        || itemCount >= capacity) {
-        return itemCount;
-    }
-    return itemCount + 1U;
+    return pageCapacity();
 }
 
 ID2D1Bitmap* LauncherWindow::itemIconBitmap(const core::LaunchItem& item)

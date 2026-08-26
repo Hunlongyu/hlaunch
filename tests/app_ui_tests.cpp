@@ -4,6 +4,7 @@
 #include "platform/windows/activation_command.h"
 #include "platform/windows/window_effects.h"
 #include "ui/item_context_menu.h"
+#include "ui/launcher_context_menu.h"
 #include "ui/launcher_layout.h"
 #include "ui/launcher_window.h"
 #include "ui/settings_window.h"
@@ -97,10 +98,11 @@ TEST_CASE("PROD-ITEM-001 item context menu exposes complete grouped actions")
 
     const auto menu = hlaunch::ui::createItemContextMenu(document, {0, 0});
     REQUIRE(menu);
-    CHECK(GetMenuItemCount(menu.get()) == 11);
+    CHECK(GetMenuItemCount(menu.get()) == 13);
     CHECK(GetMenuItemID(menu.get(), 0) == static_cast<UINT>(hlaunch::ui::ItemContextCommand::Open));
-    CHECK(GetMenuItemID(menu.get(), 6) == static_cast<UINT>(hlaunch::ui::ItemContextCommand::Edit));
+    CHECK(GetMenuItemID(menu.get(), 7) == static_cast<UINT>(hlaunch::ui::ItemContextCommand::Insert));
     CHECK(GetMenuItemID(menu.get(), 9) == static_cast<UINT>(hlaunch::ui::ItemContextCommand::Delete));
+    CHECK(GetMenuItemID(menu.get(), 12) == static_cast<UINT>(hlaunch::ui::ItemContextCommand::Properties));
     CHECK((GetMenuState(menu.get(), 1, MF_BYPOSITION) & (MF_DISABLED | MF_GRAYED)) != 0U);
     CHECK((GetMenuState(menu.get(), 10, MF_BYPOSITION) & (MF_DISABLED | MF_GRAYED)) != 0U);
 
@@ -109,11 +111,36 @@ TEST_CASE("PROD-ITEM-001 item context menu exposes complete grouped actions")
     CHECK(GetMenuItemCount(copyMenu) == 3);
     CHECK((GetMenuState(copyMenu, 0, MF_BYPOSITION) & (MF_DISABLED | MF_GRAYED)) != 0U);
 
-    const auto moveMenu = GetSubMenu(menu.get(), 7);
+    const auto moveMenu = GetSubMenu(menu.get(), 8);
     REQUIRE(moveMenu != nullptr);
     CHECK(GetMenuItemCount(moveMenu) == 2);
     CHECK((GetMenuState(moveMenu, 0, MF_BYPOSITION) & MF_CHECKED) != 0U);
     CHECK((GetMenuState(moveMenu, 1, MF_BYPOSITION) & MF_CHECKED) == 0U);
+}
+
+TEST_CASE("PROD-GRID-001 launcher chrome empty slots and tabs expose separate menus")
+{
+    const auto launcher = hlaunch::ui::createLauncherContextMenu(true);
+    REQUIRE(launcher);
+    CHECK(GetMenuItemID(launcher.get(), 0)
+          == static_cast<UINT>(hlaunch::ui::LauncherContextCommand::ToggleLock));
+    CHECK((GetMenuState(launcher.get(), 0, MF_BYPOSITION) & MF_CHECKED) != 0U);
+    CHECK(GetMenuItemID(launcher.get(), 4)
+          == static_cast<UINT>(hlaunch::ui::LauncherContextCommand::Settings));
+
+    const auto emptySlot = hlaunch::ui::createEmptySlotContextMenu();
+    REQUIRE(emptySlot);
+    CHECK(GetMenuItemID(emptySlot.get(), 0)
+          == static_cast<UINT>(hlaunch::ui::EmptySlotContextCommand::RegisterItem));
+    CHECK((GetMenuState(emptySlot.get(), 1, MF_BYPOSITION)
+           & (MF_DISABLED | MF_GRAYED)) != 0U);
+
+    const auto tab = hlaunch::ui::createTabContextMenu(false);
+    REQUIRE(tab);
+    CHECK(GetMenuItemID(tab.get(), 0)
+          == static_cast<UINT>(hlaunch::ui::TabContextCommand::AddPage));
+    CHECK((GetMenuState(tab.get(), 1, MF_BYPOSITION)
+           & (MF_DISABLED | MF_GRAYED)) != 0U);
 }
 
 TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
@@ -237,14 +264,14 @@ TEST_CASE("PROD-GRID-001 launcher layout remains DIP based and responsive")
     CHECK(regular.columns == 5);
     CHECK(wide.columns == 7);
     CHECK(regular.items.size() == 25);
-    CHECK(regular.items[0].x == doctest::Approx(24.0F));
-    CHECK(regular.items[0].y == doctest::Approx(56.0F));
+    CHECK(regular.items[0].x == doctest::Approx(22.0F));
+    CHECK(regular.items[0].y == doctest::Approx(36.0F));
     CHECK(regular.items[5].y > regular.items[0].y);
     CHECK(regular.tabs.y > regular.grid.y);
     CHECK(regular.tabs.y + regular.tabs.height == doctest::Approx(640.0F));
-    CHECK(hlaunch::ui::calculateLauncherGridCapacity(280.0F, 520.0F) == 12);
-    CHECK(hlaunch::ui::calculateLauncherGridCapacity(420.0F, 640.0F) == 25);
-    CHECK(hlaunch::ui::calculateLauncherGridCapacity(600.0F, 650.0F) == 42);
+    CHECK(hlaunch::ui::calculateLauncherGridCapacity(280.0F, 520.0F) == 18);
+    CHECK(hlaunch::ui::calculateLauncherGridCapacity(420.0F, 640.0F) == 40);
+    CHECK(hlaunch::ui::calculateLauncherGridCapacity(600.0F, 650.0F) == 56);
 }
 
 TEST_CASE("PROD-GRID-001 detached search aligns without changing the launcher Grid")
@@ -252,12 +279,62 @@ TEST_CASE("PROD-GRID-001 detached search aligns without changing the launcher Gr
     const auto launcher = hlaunch::ui::calculateLauncherLayout({420.0F, 640.0F, 25});
     const auto search = hlaunch::ui::calculateSearchPopupLayout(launcher);
 
-    CHECK(launcher.items.front().y == doctest::Approx(56.0F));
+    CHECK(launcher.items.front().y == doctest::Approx(36.0F));
     CHECK(search.xOffsetDip == doctest::Approx(0.0F));
     CHECK(search.windowWidthDip == doctest::Approx(420.0F));
     CHECK(search.windowHeightDip == doctest::Approx(60.0F));
     CHECK(search.field.x == doctest::Approx(8.0F));
     CHECK(search.field.width == doctest::Approx(404.0F));
+}
+
+TEST_CASE("PROD-GRID-001 close gesture hides launcher without terminating its process")
+{
+    clearPendingQuitMessages();
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "默认",
+        }},
+    };
+    hlaunch::ui::LauncherWindow launcher{};
+    REQUIRE(launcher.create(
+        GetModuleHandleW(nullptr),
+        hlaunch::platform::windows::WindowEffects{
+            .backdrop = hlaunch::platform::windows::WindowBackdrop::Solid,
+        },
+        false,
+        std::move(document),
+        [](const hlaunch::core::LaunchItem&) {}));
+    launcher.show();
+    REQUIRE(launcher.isVisible());
+    SendMessageW(launcher.handle(), WM_CLOSE, 0, 0);
+    CHECK_FALSE(launcher.isVisible());
+    CHECK(launcher.handle() != nullptr);
+}
+
+TEST_CASE("PROD-GRID-001 Alt F4 explicitly terminates the launcher window")
+{
+    clearPendingQuitMessages();
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "默认",
+        }},
+    };
+    hlaunch::ui::LauncherWindow launcher{};
+    REQUIRE(launcher.create(
+        GetModuleHandleW(nullptr),
+        hlaunch::platform::windows::WindowEffects{
+            .backdrop = hlaunch::platform::windows::WindowBackdrop::Solid,
+        },
+        false,
+        std::move(document),
+        [](const hlaunch::core::LaunchItem&) {}));
+    const auto window = launcher.handle();
+    REQUIRE(window != nullptr);
+    SendMessageW(window, WM_SYSKEYDOWN, VK_F4, 0);
+    CHECK(launcher.handle() == nullptr);
+    clearPendingQuitMessages();
 }
 
 TEST_CASE("PROD-GRID-001 launcher typing searches every tab and Enter invokes the exact match")
@@ -312,7 +389,7 @@ TEST_CASE("PROD-GRID-001 Grid wheel and PageDown keep the focused item visible")
             .name = "Many",
         }},
     };
-    for (int index = 0; index < 30; ++index) {
+    for (int index = 0; index < 55; ++index) {
         document.tabs[0].items.push_back(searchableItem(
             "item-" + std::to_string(index),
             "Item " + std::to_string(index)));
@@ -342,7 +419,7 @@ TEST_CASE("PROD-GRID-001 Grid wheel and PageDown keep the focused item visible")
     SendMessageW(launcher.handle(), WM_KEYDOWN, VK_PRIOR, 0);
     SendMessageW(launcher.handle(), WM_KEYDOWN, VK_NEXT, 0);
     SendMessageW(launcher.handle(), WM_KEYDOWN, VK_RETURN, 0);
-    CHECK(launchedId == "item-25");
+    CHECK(launchedId == "item-40");
 }
 
 TEST_CASE("PROD-GRID-001 search results remain available beyond the first page")
@@ -353,7 +430,7 @@ TEST_CASE("PROD-GRID-001 search results remain available beyond the first page")
             .name = "Many",
         }},
     };
-    for (int index = 0; index < 30; ++index) {
+    for (int index = 0; index < 55; ++index) {
         const auto suffix = index < 10
             ? "0" + std::to_string(index)
             : std::to_string(index);
@@ -384,7 +461,7 @@ TEST_CASE("PROD-GRID-001 search results remain available beyond the first page")
     SendMessageW(search, WM_KEYDOWN, VK_NEXT, 0);
     SendMessageW(search, WM_KEYDOWN, VK_RETURN, 0);
 
-    CHECK(launchedId == "item-25");
+    CHECK(launchedId == "item-40");
 }
 
 TEST_CASE("PROD-ITEM-001 launcher adds and moves an item while preserving identity")
@@ -710,7 +787,7 @@ TEST_CASE("UI-DRAG-001 launcher chrome and spacing initiate window dragging")
 {
     const auto layout = hlaunch::ui::calculateLauncherLayout({420.0F, 640.0F, 25});
 
-    CHECK(hlaunch::ui::isLauncherDragRegion(layout, 8.0F, 8.0F));
+    CHECK(hlaunch::ui::isLauncherDragRegion(layout, 4.0F, 4.0F));
     CHECK(hlaunch::ui::isLauncherDragRegion(
         layout,
         layout.header.x + 40.0F,
@@ -722,7 +799,7 @@ TEST_CASE("UI-DRAG-001 launcher chrome and spacing initiate window dragging")
     CHECK(hlaunch::ui::isLauncherDragRegion(
         layout,
         layout.grid.x + 8.0F,
-        layout.grid.y + layout.grid.height + 6.0F));
+        layout.grid.y + layout.grid.height + 2.0F));
 }
 
 TEST_CASE("ACT-HOTKEY-001 activation centers and constrains the launcher in the target work area")

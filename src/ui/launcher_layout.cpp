@@ -27,10 +27,22 @@ LauncherLayout calculateLauncherLayout(
     float y = metrics.outerPadding;
 
     layout.header = RectDip{metrics.outerPadding, y, contentWidth, metrics.headerHeight};
+    layout.menuButton = RectDip{
+        layout.header.x,
+        layout.header.y,
+        metrics.headerHeight,
+        metrics.headerHeight,
+    };
     layout.closeButton = RectDip{
         layout.header.x + std::max(0.0F, layout.header.width - metrics.headerHeight),
         layout.header.y,
         std::min(layout.header.width, metrics.headerHeight),
+        metrics.headerHeight,
+    };
+    layout.lockButton = RectDip{
+        std::max(layout.header.x, layout.closeButton.x - metrics.headerHeight),
+        layout.header.y,
+        metrics.headerHeight,
         metrics.headerHeight,
     };
     y += metrics.headerHeight + metrics.sectionGap;
@@ -124,6 +136,8 @@ bool isLauncherDragRegion(
     const float yDip) noexcept
 {
     return !contains(layout.closeButton, xDip, yDip)
+        && !contains(layout.menuButton, xDip, yDip)
+        && !contains(layout.lockButton, xDip, yDip)
         && !contains(layout.grid, xDip, yDip)
         && !contains(layout.tabs, xDip, yDip);
 }

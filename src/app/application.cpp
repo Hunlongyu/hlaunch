@@ -221,6 +221,7 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
     infrastructure::logging::write(
         infrastructure::logging::Level::Info,
         "activation_window_created");
+    launcher_.setSettingsHandler([this] { showSettings(); });
 
     try {
         itemsSaver_.emplace(
@@ -313,6 +314,10 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
     MSG message{};
     BOOL messageResult{};
     while ((messageResult = GetMessageW(&message, nullptr, 0, 0)) > 0) {
+        if (settings_.isVisible()
+            && IsDialogMessageW(settings_.handle(), &message)) {
+            continue;
+        }
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
@@ -494,7 +499,6 @@ void Application::launch(const core::LaunchItem& item)
 
 void Application::showSettings()
 {
-    launcher_.show();
     if (!settings_.show(
             instance_,
             launcher_.handle(),

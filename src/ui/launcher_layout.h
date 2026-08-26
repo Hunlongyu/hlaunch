@@ -19,17 +19,19 @@ struct RectDip {
 };
 
 struct LauncherMetrics {
-    float outerPadding{16.0F};
-    float headerHeight{28.0F};
-    float sectionGap{12.0F};
-    float tabHeight{36.0F};
-    float itemWidth{68.0F};
-    float itemHeight{84.0F};
-    float itemGap{8.0F};
+    float outerPadding{8.0F};
+    float headerHeight{24.0F};
+    float sectionGap{4.0F};
+    float tabHeight{34.0F};
+    float itemWidth{72.0F};
+    float itemHeight{62.0F};
+    float itemGap{4.0F};
 };
 
 struct LauncherLayout {
     RectDip header{};
+    RectDip menuButton{};
+    RectDip lockButton{};
     RectDip closeButton{};
     RectDip tabs{};
     RectDip grid{};

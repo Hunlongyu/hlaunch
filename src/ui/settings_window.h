@@ -1,10 +1,8 @@
 #pragma once
 
 #include "core/data_model.h"
-#include "ui/theme.h"
 
 #include <Windows.h>
-#include <wil/resource.h>
 
 #include <functional>
 
@@ -32,24 +30,17 @@ public:
     [[nodiscard]] bool isVisible() const noexcept;
 
 private:
-    static LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-    LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
+    static INT_PTR CALLBACK dialogProcedure(
+        HWND dialog, UINT message, WPARAM wParam, LPARAM lParam);
+    INT_PTR handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
     [[nodiscard]] bool create(HINSTANCE instance, HWND owner);
     void createControls();
-    void rebuildThemeResources();
-    void paint();
-    void drawButton(const DRAWITEMSTRUCT& item) const;
-    void drawComboItem(const DRAWITEMSTRUCT& item) const;
-    [[nodiscard]] bool closeHit(POINT point) const noexcept;
     void positionOverOwner(HWND owner);
 
     HWND window_{};
     HWND themeCombo_{};
     core::ThemeMode themeMode_{core::ThemeMode::Dark};
-    ThemePalette palette_{};
     ThemeChangedHandler themeChangedHandler_{};
-    wil::unique_hbrush backgroundBrush_{};
-    wil::unique_hbrush surfaceBrush_{};
 };
 
 } // namespace hlaunch::ui

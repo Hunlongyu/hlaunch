@@ -31,6 +31,7 @@ class LauncherWindow final {
 public:
     using LaunchHandler = std::function<void(const core::LaunchItem&)>;
     using DocumentChangedHandler = std::function<void(const core::ItemsDocument&)>;
+    using SettingsHandler = std::function<void()>;
     using DeleteConfirmationHandler = std::function<bool(HWND, const core::LaunchItem&)>;
     using ItemEditorHandler = std::function<std::optional<ItemEditorResult>(
         HWND,
@@ -56,6 +57,7 @@ public:
     void setDocumentChangedHandler(DocumentChangedHandler handler);
     void setDeleteConfirmationHandler(DeleteConfirmationHandler handler);
     void setItemEditorHandler(ItemEditorHandler handler);
+    void setSettingsHandler(SettingsHandler handler);
     void show();
     void showAtScreenEdge(const activation::ScreenEdgeHit& hit);
     void hide();
@@ -80,10 +82,18 @@ private:
     [[nodiscard]] bool handleSearchKeyDown(WPARAM key);
     void beginSearch(std::wstring_view initialText = {});
     void updateSearch(std::wstring_view query);
-    void handleMouseWheel(short delta);
+    void handleMouseWheel(short delta, POINT screenPoint);
     void showAddEditor();
     void showEditEditor(std::size_t absoluteIndex);
     void showItemContextMenu(std::size_t absoluteIndex, POINT screenPoint);
+    void showLauncherContextMenu(POINT screenPoint);
+    void showEmptySlotContextMenu(POINT screenPoint);
+    void showTabContextMenu(std::size_t tabIndex, POINT screenPoint);
+    void addPage();
+    void deletePage(std::size_t tabIndex);
+    void renamePage(std::size_t tabIndex);
+    void toggleWindowLock();
+    void scheduleAutoHide();
     void deleteItem(std::size_t absoluteIndex);
     void beginItemDrag(std::size_t absoluteIndex, POINT clientPoint);
     void updateItemDrag(POINT clientPoint);
@@ -153,6 +163,8 @@ private:
     std::size_t pageOffset_{};
     int wheelDeltaRemainder_{};
     bool windowFocused_{};
+    bool windowLocked_{};
+    bool hasPositioned_{};
     std::optional<core::ItemLocation> itemDragSource_{};
     std::optional<InternalDropTarget> itemDropTarget_{};
     std::optional<std::size_t> pressedItemIndex_{};
@@ -162,6 +174,7 @@ private:
     DocumentChangedHandler documentChangedHandler_{};
     DeleteConfirmationHandler deleteConfirmationHandler_{};
     ItemEditorHandler itemEditorHandler_{};
+    SettingsHandler settingsHandler_{};
     platform::windows::DropTarget dropTarget_{};
     std::unique_ptr<platform::windows::DropItemResolver> dropResolver_{};
     std::unique_ptr<platform::windows::IconLoader> iconLoader_{};

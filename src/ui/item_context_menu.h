@@ -10,8 +10,9 @@ namespace hlaunch::ui {
 enum class ItemContextCommand : UINT_PTR {
     None = 0,
     Open = 1,
-    Edit = 2,
+    Properties = 2,
     Delete = 3,
+    Insert = 4,
 };
 
 [[nodiscard]] wil::unique_hmenu createItemContextMenu(

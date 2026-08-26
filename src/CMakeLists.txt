@@ -176,6 +176,8 @@ add_library(
     STATIC
         ui/launcher_layout.cpp
         ui/launcher_layout.h
+        ui/launcher_context_menu.cpp
+        ui/launcher_context_menu.h
         ui/item_context_menu.cpp
         ui/item_context_menu.h
         ui/launcher_window.cpp
@@ -186,6 +188,9 @@ add_library(
         ui/search_window.h
         ui/settings_window.cpp
         ui/settings_window.h
+        ui/native_dialog_template.h
+        ui/text_prompt_dialog.cpp
+        ui/text_prompt_dialog.h
         ui/theme.cpp
         ui/theme.h
 )
@@ -208,6 +213,9 @@ target_link_libraries(
         d2d1
         dwmapi
         dwrite
+        ole32
+        shell32
+        shlwapi
         user32
         uxtheme
 )
