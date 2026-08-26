@@ -2,6 +2,7 @@
 
 #include "app/command_line.h"
 #include "core/data_model.h"
+#include "infrastructure/filesystem/items_save_worker.h"
 #include "platform/windows/global_hotkey.h"
 #include "platform/windows/screen_edge_activation.h"
 #include "platform/windows/single_instance.h"
@@ -30,6 +31,7 @@ private:
     void launch(const core::LaunchItem& item);
 
     std::optional<platform::windows::SingleInstance> singleInstance_{};
+    std::optional<infrastructure::filesystem::ItemsSaveWorker> itemsSaver_{};
     ui::LauncherWindow launcher_{};
     HWND activationWindow_{};
     platform::windows::GlobalHotkey hotkey_{};

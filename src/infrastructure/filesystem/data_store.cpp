@@ -7,6 +7,16 @@
 namespace hlaunch::infrastructure::filesystem {
 namespace {
 
+core::ItemsDocument defaultItemsDocument()
+{
+    return core::ItemsDocument{
+        .tabs = {core::Tab{
+            .id = "42f8b39d-18ba-47b0-9dbe-e7836ef69f49",
+            .name = "常用",
+        }},
+    };
+}
+
 StoreError fileStoreError(FileError error)
 {
     return StoreError{
@@ -127,7 +137,7 @@ std::expected<ItemsLoadResult, StoreError> loadItems(const std::filesystem::path
 {
     return loadDocument(
         path,
-        core::ItemsDocument{},
+        defaultItemsDocument(),
         [](const std::string_view input) { return json::decodeItems(input); });
 }
 

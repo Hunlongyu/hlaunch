@@ -1,9 +1,11 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 
 #include "core/data_model.h"
+#include "core/data_validation.h"
 #include "infrastructure/filesystem/atomic_file.h"
 #include "infrastructure/filesystem/data_paths.h"
 #include "infrastructure/filesystem/data_store.h"
+#include "infrastructure/filesystem/items_save_worker.h"
 
 #include <Windows.h>
 #include <doctest/doctest.h>
@@ -12,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -98,6 +101,21 @@ TEST_CASE("DATA-CONFIG-001 portable.flag selects the portable data root")
     CHECK(paths->root == executable.parent_path() / L"data");
 }
 
+TEST_CASE("PROD-ITEM-001 a missing items file provides an editable default tab")
+{
+    TemporaryDirectory temporary{};
+    const auto loaded =
+        hlaunch::infrastructure::filesystem::loadItems(temporary.path() / L"items.json");
+
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->value.has_value());
+    CHECK(loaded->source == hlaunch::infrastructure::filesystem::LoadSource::Defaults);
+    REQUIRE(loaded->value->tabs.size() == 1U);
+    CHECK(loaded->value->tabs.front().name == "常用");
+    CHECK(loaded->value->tabs.front().items.empty());
+    CHECK(hlaunch::core::validateItemsDocument(*loaded->value).empty());
+}
+
 TEST_CASE("DATA-CONFIG-001 atomic saves retain one previous valid backup")
 {
     TemporaryDirectory temporary{};
@@ -166,4 +184,63 @@ TEST_CASE("DATA-CONFIG-001 a temporary-file failure preserves the primary")
     REQUIRE(loaded.has_value());
     REQUIRE(loaded->value.has_value());
     CHECK(loaded->value->activation.hotkey.enabled);
+}
+
+TEST_CASE("PROD-ITEM-001 queued item saves flush the latest snapshot on shutdown")
+{
+    TemporaryDirectory temporary{};
+    const auto itemsPath = temporary.path() / L"items.json";
+    std::atomic_uint32_t failureCount{};
+
+    hlaunch::core::ItemsDocument first{};
+    first.tabs.push_back({
+        .id = "11111111-1111-4111-8111-111111111111",
+        .name = "常用",
+    });
+    first.tabs.front().items.push_back({
+        .id = "22222222-2222-4222-8222-222222222222",
+        .name = "第一项",
+        .target = "first.exe",
+    });
+
+    auto latest = first;
+    latest.tabs.front().items.front().name = "最终名称";
+    latest.tabs.front().items.front().target = "latest.exe";
+
+    {
+        hlaunch::infrastructure::filesystem::ItemsSaveWorker worker{
+            itemsPath, [&failureCount](const auto&) { ++failureCount; }};
+        worker.submit(first);
+        worker.submit(latest);
+    }
+
+    CHECK(failureCount.load() == 0U);
+    const auto loaded = hlaunch::infrastructure::filesystem::loadItems(itemsPath);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->value.has_value());
+    CHECK(*loaded->value == latest);
+}
+
+TEST_CASE("PROD-ITEM-001 background save failures reach the notification callback")
+{
+    TemporaryDirectory temporary{};
+    const auto itemsPath = temporary.path() / L"items.json";
+    REQUIRE(std::filesystem::create_directory(
+        hlaunch::infrastructure::filesystem::temporaryPathFor(itemsPath)));
+    std::atomic_uint32_t failureCount{};
+
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "常用",
+        }},
+    };
+    {
+        hlaunch::infrastructure::filesystem::ItemsSaveWorker worker{
+            itemsPath, [&failureCount](const auto&) { ++failureCount; }};
+        worker.submit(std::move(document));
+    }
+
+    CHECK(failureCount.load() == 1U);
+    CHECK_FALSE(std::filesystem::exists(itemsPath));
 }

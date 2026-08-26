@@ -9,12 +9,15 @@
 #include <wil/resource.h>
 
 #include <array>
+#include <exception>
 #include <filesystem>
 #include <string>
 #include <string_view>
 
 namespace hlaunch::app {
 namespace {
+
+constexpr UINT itemsSaveFailedMessage = WM_APP + 0x41U;
 
 std::filesystem::path executablePath()
 {
@@ -213,6 +216,35 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
         infrastructure::logging::Level::Info,
         "activation_window_created");
 
+    try {
+        itemsSaver_.emplace(
+            paths->itemsFile,
+            [this](const infrastructure::filesystem::StoreError& error) {
+                infrastructure::logging::writeSystemError(
+                    infrastructure::logging::Level::Error,
+                    "items_save_failed",
+                    error.systemCode);
+                if (activationWindow_) {
+                    PostMessageW(activationWindow_, itemsSaveFailedMessage, 0, 0);
+                }
+            });
+    }
+    catch (const std::exception&) {
+        infrastructure::logging::write(
+            infrastructure::logging::Level::Error,
+            "items_save_worker_create_failed");
+        showStartupError(L"无法启动条目保存服务。");
+        return 6;
+    }
+    const auto itemsSaverCleanup = wil::scope_exit([this] { itemsSaver_.reset(); });
+
+    launcher_.setDocumentChangedHandler(
+        [this](const core::ItemsDocument& document) {
+            if (itemsSaver_) {
+                itemsSaver_->submit(document);
+            }
+        });
+
     const auto& hotkeyConfig = config->value->activation.hotkey;
     const auto hotkeyResult = hotkey_.apply(activationWindow_, hotkeyConfig);
     const bool hotkeyAvailable = hotkeyResult.has_value() && hotkey_.isRegistered();
@@ -349,6 +381,15 @@ LRESULT Application::handleActivationMessage(
     if (message == platform::windows::activationMessageId()) {
         const auto command = static_cast<platform::windows::ActivationCommand>(wParam);
         execute(command);
+        return 0;
+    }
+    if (message == itemsSaveFailedMessage) {
+        MessageBoxW(
+            launcher_.handle(),
+            L"条目已在当前会话中更新，但无法保存到 items.json。\n\n"
+            L"请检查数据目录权限或磁盘空间后重试。",
+            L"HLaunch 保存失败",
+            MB_OK | MB_ICONERROR);
         return 0;
     }
     if (message == WM_HOTKEY && hotkey_.handlesMessage(wParam)) {

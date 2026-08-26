@@ -59,6 +59,19 @@ target_link_libraries(
 
 add_test(NAME PROD-GRID-001.search COMMAND hlaunch_search_tests)
 
+add_executable(hlaunch_item_operations_tests item_operations_tests.cpp)
+
+target_link_libraries(
+    hlaunch_item_operations_tests
+    PRIVATE
+        HLaunch::Core
+        HLaunch::PlatformWindows
+        HLaunch::ProjectOptions
+        doctest::doctest
+)
+
+add_test(NAME PROD-ITEM-001.mutations COMMAND hlaunch_item_operations_tests)
+
 add_executable(hlaunch_app_ui_tests app_ui_tests.cpp)
 
 target_link_libraries(

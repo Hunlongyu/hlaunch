@@ -1,6 +1,10 @@
 #include "ui/launcher_window.h"
 
+#include "core/item_operations.h"
+#include "core/data_validation.h"
 #include "platform/windows/search_text.h"
+#include "platform/windows/uuid.h"
+#include "ui/item_editor_dialog.h"
 #include "ui/launcher_layout.h"
 
 #include <d2d1helper.h>
@@ -102,13 +106,13 @@ bool LauncherWindow::create(
     const platform::windows::WindowEffects& effects,
     const bool showSearch,
     core::ItemsDocument document,
-    LaunchHandler launchHandler)
+    LaunchHandler launchHandler,
+    DocumentChangedHandler documentChangedHandler)
 {
     document_ = std::move(document);
-    searchIndex_.rebuild(document_, [](const std::string_view name) {
-        return platform::windows::normalizeSearchText(name);
-    });
+    rebuildSearchIndex();
     launchHandler_ = std::move(launchHandler);
+    documentChangedHandler_ = std::move(documentChangedHandler);
     activeTabIndex_ = 0;
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(WNDCLASSEXW);
@@ -157,6 +161,11 @@ bool LauncherWindow::create(
     }
     searchVisible_ = showSearch;
     return true;
+}
+
+void LauncherWindow::setDocumentChangedHandler(DocumentChangedHandler handler)
+{
+    documentChangedHandler_ = std::move(handler);
 }
 
 void LauncherWindow::show()
@@ -458,6 +467,25 @@ LRESULT LauncherWindow::handleMessage(
                 InvalidateRect(window_, nullptr, FALSE);
                 launchHandler_(*displayed->item);
             }
+            else if (!isSearchFiltering() && *itemIndex >= visibleItemCount()) {
+                showAddEditor();
+            }
+        }
+        return 0;
+    }
+    case WM_RBUTTONUP: {
+        RECT client{};
+        GetClientRect(window_, &client);
+        const float xDip = static_cast<float>(GET_X_LPARAM(lParam)) * 96.0F / static_cast<float>(dpi_);
+        const float yDip = static_cast<float>(GET_Y_LPARAM(lParam)) * 96.0F / static_cast<float>(dpi_);
+        const auto layout = calculateLauncherLayout({
+            .clientWidthDip = static_cast<float>(client.right) * 96.0F / static_cast<float>(dpi_),
+            .clientHeightDip = static_cast<float>(client.bottom) * 96.0F / static_cast<float>(dpi_),
+            .itemCount = displayedTileCount(),
+        });
+        if (const auto itemIndex = hitTestLauncherItem(layout, xDip, yDip);
+            itemIndex && *itemIndex < visibleItemCount()) {
+            showEditEditor(pageOffset_ + *itemIndex);
         }
         return 0;
     }
@@ -916,6 +944,14 @@ void LauncherWindow::render()
 
 bool LauncherWindow::handleKeyDown(const WPARAM key)
 {
+    if (key == VK_INSERT && !isSearchFiltering()) {
+        showAddEditor();
+        return true;
+    }
+    if (key == VK_F2 && totalItemCount() > 0) {
+        showEditEditor(focusedItemIndex_);
+        return true;
+    }
     if (key == L'F' && GetKeyState(VK_CONTROL) < 0) {
         beginSearch();
         return true;
@@ -1100,6 +1136,86 @@ void LauncherWindow::handleMouseWheel(const short delta)
         }
     }
     InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::showAddEditor()
+{
+    auto edited = ItemEditorDialog::show(window_, document_.tabs, activeTabIndex_);
+    if (!edited) {
+        return;
+    }
+    auto id = platform::windows::createUuidV4();
+    if (!id) {
+        MessageBoxW(window_, L"无法生成条目标识。", L"HLaunch 条目", MB_OK | MB_ICONERROR);
+        return;
+    }
+    edited->item.id = std::move(*id);
+    auto updatedDocument = document_;
+    const auto location = core::addItem(
+        updatedDocument,
+        edited->tabIndex,
+        std::move(edited->item));
+    if (!location || !core::validateItemsDocument(updatedDocument).empty()) {
+        MessageBoxW(window_, L"条目内容未通过校验，请检查输入。", L"HLaunch 条目", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    document_ = std::move(updatedDocument);
+    activeTabIndex_ = location->tabIndex;
+    focusedItemIndex_ = location->itemIndex;
+    pageOffset_ = 0;
+    searchVisible_ = false;
+    searchWindow_.setQuery({});
+    searchWindow_.hide();
+    rebuildSearchIndex();
+    ensureFocusedItemVisible();
+    if (documentChangedHandler_) documentChangedHandler_(document_);
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::showEditEditor(const std::size_t absoluteIndex)
+{
+    core::ItemLocation source{};
+    if (isSearchFiltering()) {
+        if (absoluteIndex >= searchResults_.size()) return;
+        source = {searchResults_[absoluteIndex].tabIndex, searchResults_[absoluteIndex].itemIndex};
+    }
+    else {
+        source = {activeTabIndex_, absoluteIndex};
+    }
+    if (source.tabIndex >= document_.tabs.size()
+        || source.itemIndex >= document_.tabs[source.tabIndex].items.size()) return;
+    const auto* initial = &document_.tabs[source.tabIndex].items[source.itemIndex];
+    auto edited = ItemEditorDialog::show(window_, document_.tabs, source.tabIndex, initial);
+    if (!edited) return;
+
+    auto updatedDocument = document_;
+    const auto location = core::updateItem(
+        updatedDocument,
+        source,
+        edited->tabIndex,
+        std::move(edited->item));
+    if (!location || !core::validateItemsDocument(updatedDocument).empty()) {
+        MessageBoxW(window_, L"条目内容未通过校验，请检查输入。", L"HLaunch 条目", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    document_ = std::move(updatedDocument);
+    activeTabIndex_ = location->tabIndex;
+    focusedItemIndex_ = location->itemIndex;
+    pageOffset_ = 0;
+    searchVisible_ = false;
+    searchWindow_.setQuery({});
+    searchWindow_.hide();
+    rebuildSearchIndex();
+    ensureFocusedItemVisible();
+    if (documentChangedHandler_) documentChangedHandler_(document_);
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::rebuildSearchIndex()
+{
+    searchIndex_.rebuild(document_, [](const std::string_view name) {
+        return platform::windows::normalizeSearchText(name);
+    });
 }
 
 void LauncherWindow::activateFocusedItem()

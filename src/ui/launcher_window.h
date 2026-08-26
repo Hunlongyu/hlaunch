@@ -22,6 +22,7 @@ namespace hlaunch::ui {
 class LauncherWindow final {
 public:
     using LaunchHandler = std::function<void(const core::LaunchItem&)>;
+    using DocumentChangedHandler = std::function<void(const core::ItemsDocument&)>;
 
     LauncherWindow() = default;
     ~LauncherWindow();
@@ -34,7 +35,9 @@ public:
         const platform::windows::WindowEffects& effects,
         bool showSearch,
         core::ItemsDocument document,
-        LaunchHandler launchHandler);
+        LaunchHandler launchHandler,
+        DocumentChangedHandler documentChangedHandler = {});
+    void setDocumentChangedHandler(DocumentChangedHandler handler);
     void show();
     void showAtScreenEdge(const activation::ScreenEdgeHit& hit);
     void hide();
@@ -60,6 +63,9 @@ private:
     void beginSearch(std::wstring_view initialText = {});
     void updateSearch(std::wstring_view query);
     void handleMouseWheel(short delta);
+    void showAddEditor();
+    void showEditEditor(std::size_t absoluteIndex);
+    void rebuildSearchIndex();
     void activateFocusedItem();
     void changeActiveTab(std::size_t tabIndex);
     [[nodiscard]] const core::Tab* activeTab() const noexcept;
@@ -94,6 +100,7 @@ private:
     int wheelDeltaRemainder_{};
     bool windowFocused_{};
     LaunchHandler launchHandler_{};
+    DocumentChangedHandler documentChangedHandler_{};
     SearchWindow searchWindow_{};
     winrt::com_ptr<ID2D1Factory> d2dFactory_{};
     winrt::com_ptr<IDWriteFactory> writeFactory_{};

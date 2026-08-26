@@ -1,6 +1,6 @@
 # 可访问性契约
 
-当前实现状态（2026-08-26）：Launcher 已具备 Grid/Tab 与跨分类搜索键盘路径、方向键跨页、PageUp/PageDown、Enter 启动、Esc 清空/关闭和非纯颜色的条目焦点轮廓，并完成真实窗口消息验证。UI Automation Provider、Narrator、Accessibility Insights、高对比度与文本缩放仍未实现或验证，因此 `UIA-001` 仅为部分验证。
+当前实现状态（2026-08-26）：Launcher 已具备 Grid/Tab 与跨分类搜索键盘路径、方向键跨页、PageUp/PageDown、Enter 启动、`Insert` 添加、`F2` 编辑、Esc 清空/关闭和非纯颜色的条目焦点轮廓，并完成真实窗口消息验证。条目编辑器使用原生 Win32 Controls，可通过 Tab 顺序和默认按钮操作。Launcher 的 UI Automation Provider、Narrator、Accessibility Insights、高对比度与文本缩放仍未实现或验证，因此 `UIA-001` 仅为部分验证。
 
 ## 基线
 

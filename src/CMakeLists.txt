@@ -2,6 +2,8 @@ add_library(
     hlaunch_core
     STATIC
         core/data_model.h
+        core/item_operations.cpp
+        core/item_operations.h
         core/search_index.cpp
         core/search_index.h
         core/data_validation.cpp
@@ -51,6 +53,8 @@ add_library(
         infrastructure/filesystem/data_paths.h
         infrastructure/filesystem/data_store.cpp
         infrastructure/filesystem/data_store.h
+        infrastructure/filesystem/items_save_worker.cpp
+        infrastructure/filesystem/items_save_worker.h
 )
 add_library(HLaunch::InfrastructureStorage ALIAS hlaunch_infrastructure_storage)
 
@@ -127,6 +131,8 @@ add_library(
         platform/windows/single_instance.h
         platform/windows/tray_icon.cpp
         platform/windows/tray_icon.h
+        platform/windows/uuid.cpp
+        platform/windows/uuid.h
         platform/windows/window_effects.cpp
         platform/windows/window_effects.h
 )
@@ -146,6 +152,7 @@ target_link_libraries(
         HLaunch::ProjectOptions
         advapi32
         dwmapi
+        ole32
         shcore
         shell32
         user32
@@ -158,6 +165,8 @@ add_library(
         ui/launcher_layout.h
         ui/launcher_window.cpp
         ui/launcher_window.h
+        ui/item_editor_dialog.cpp
+        ui/item_editor_dialog.h
         ui/search_window.cpp
         ui/search_window.h
 )
