@@ -14,7 +14,24 @@ bool containsItemId(const ItemsDocument &document, const std::string_view id)
     });
 }
 
+bool hasSameLaunchProperties(const LaunchItem &left, const LaunchItem &right) noexcept
+{
+    return left.target == right.target && left.arguments == right.arguments &&
+           left.workingDirectory == right.workingDirectory &&
+           left.runAsAdministrator == right.runAsAdministrator;
+}
+
 } // namespace
+
+bool hasExactLaunchDuplicate(const ItemsDocument &document,
+                             const LaunchItem &candidate) noexcept
+{
+    return std::ranges::any_of(document.tabs, [&candidate](const Tab &tab) {
+        return std::ranges::any_of(tab.items, [&candidate](const LaunchItem &item) {
+            return hasSameLaunchProperties(item, candidate);
+        });
+    });
+}
 
 std::expected<ItemLocation, ItemMutationError>
 addItem(ItemsDocument &document, const std::size_t targetTabIndex, LaunchItem item)
@@ -63,6 +80,34 @@ std::expected<ItemLocation, ItemMutationError> updateItem(ItemsDocument &documen
     auto &targetItems = document.tabs[targetTabIndex].items;
     targetItems.push_back(std::move(replacement));
     return ItemLocation{targetTabIndex, targetItems.size() - 1U};
+}
+
+std::expected<BatchItemMutationResult, ItemMutationError>
+addImportedItems(ItemsDocument &document, const std::size_t targetTabIndex,
+                 std::vector<LaunchItem> items, const bool allowExactDuplicates)
+{
+    if (targetTabIndex >= document.tabs.size())
+    {
+        return std::unexpected(ItemMutationError::InvalidTab);
+    }
+
+    BatchItemMutationResult result{};
+    result.added.reserve(items.size());
+    for (auto &item : items)
+    {
+        if (!allowExactDuplicates && hasExactLaunchDuplicate(document, item))
+        {
+            ++result.skippedDuplicates;
+            continue;
+        }
+        auto location = addItem(document, targetTabIndex, std::move(item));
+        if (!location)
+        {
+            return std::unexpected(location.error());
+        }
+        result.added.push_back(*location);
+    }
+    return result;
 }
 
 } // namespace hlaunch::core

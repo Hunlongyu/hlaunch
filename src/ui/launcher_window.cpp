@@ -12,6 +12,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <memory>
+#include <new>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -25,6 +27,7 @@ constexpr int launcherWidthDip = 420;
 constexpr int launcherHeightDip = 640;
 
 constexpr std::size_t maximumVisibleItems = 25;
+constexpr UINT dropImportCompletedMessage = WM_APP + 0x43U;
 
 std::wstring utf8ToWide(const std::string_view value)
 {
@@ -96,6 +99,7 @@ D2D1_RECT_F toD2dRect(const RectDip& rectangle)
 
 LauncherWindow::~LauncherWindow()
 {
+    shutdownDropServices();
     if (window_) {
         DestroyWindow(window_);
     }
@@ -157,6 +161,35 @@ bool LauncherWindow::create(
             effects,
             [this](const std::wstring_view query) { updateSearch(query); },
             [this](const WPARAM key) { return handleSearchKeyDown(key); })) {
+        return false;
+    }
+    try {
+        const HWND notificationWindow = window_;
+        dropResolver_ = std::make_unique<platform::windows::DropItemResolver>(
+            [notificationWindow](platform::windows::DropImportResult result) {
+                auto payload = std::unique_ptr<platform::windows::DropImportResult>{
+                    new (std::nothrow) platform::windows::DropImportResult{std::move(result)}};
+                if (!payload) {
+                    return;
+                }
+                if (PostMessageW(
+                        notificationWindow,
+                        dropImportCompletedMessage,
+                        0,
+                        reinterpret_cast<LPARAM>(payload.get()))) { // NOLINT(performance-no-int-to-ptr): Internal message transfers this heap result to the UI thread.
+                    static_cast<void>(payload.release());
+                }
+            });
+    }
+    catch (...) {
+        return false;
+    }
+    if (!dropTarget_.registerForWindow(
+            window_,
+            [this](std::vector<platform::windows::DroppedSource> sources, const POINTL point) {
+                submitDroppedSources(std::move(sources), point);
+            })) {
+        dropResolver_.reset();
         return false;
     }
     searchVisible_ = showSearch;
@@ -489,6 +522,14 @@ LRESULT LauncherWindow::handleMessage(
         }
         return 0;
     }
+    case dropImportCompletedMessage: {
+        auto result = std::unique_ptr<platform::windows::DropImportResult>{
+            reinterpret_cast<platform::windows::DropImportResult*>(lParam)}; // NOLINT(performance-no-int-to-ptr): Internal message owns this heap result.
+        if (result) {
+            applyDropImport(std::move(*result));
+        }
+        return 0;
+    }
     case WM_SIZE:
         if (renderTarget_ && wParam != SIZE_MINIMIZED) {
             renderTarget_->Resize(D2D1::SizeU(LOWORD(lParam), HIWORD(lParam)));
@@ -526,9 +567,11 @@ LRESULT LauncherWindow::handleMessage(
         return 0;
     }
     case WM_CLOSE:
+        shutdownDropServices();
         DestroyWindow(window_);
         return 0;
     case WM_DESTROY:
+        shutdownDropServices();
         window_ = nullptr;
         PostQuitMessage(0);
         return 0;
@@ -1209,6 +1252,156 @@ void LauncherWindow::showEditEditor(const std::size_t absoluteIndex)
     ensureFocusedItemVisible();
     if (documentChangedHandler_) documentChangedHandler_(document_);
     InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::submitDroppedSources(
+    std::vector<platform::windows::DroppedSource> sources,
+    const POINTL screenPoint)
+{
+    if (!dropResolver_ || sources.empty() || document_.tabs.empty()) {
+        return;
+    }
+
+    std::size_t targetTabIndex = activeTabIndex_;
+    if (!isSearchFiltering()) {
+        POINT clientPoint{screenPoint.x, screenPoint.y};
+        if (ScreenToClient(window_, &clientPoint)) {
+            RECT client{};
+            GetClientRect(window_, &client);
+            const auto layout = calculateLauncherLayout({
+                .clientWidthDip = static_cast<float>(client.right) * 96.0F
+                    / static_cast<float>(dpi_),
+                .clientHeightDip = static_cast<float>(client.bottom) * 96.0F
+                    / static_cast<float>(dpi_),
+                .itemCount = displayedTileCount(),
+            });
+            const float xDip = static_cast<float>(clientPoint.x) * 96.0F
+                / static_cast<float>(dpi_);
+            const float yDip = static_cast<float>(clientPoint.y) * 96.0F
+                / static_cast<float>(dpi_);
+            if (const auto tab = hitTestLauncherTab(
+                    layout,
+                    document_.tabs.size(),
+                    xDip,
+                    yDip)) {
+                targetTabIndex = *tab;
+            }
+        }
+    }
+    dropResolver_->submit({targetTabIndex, std::move(sources)});
+}
+
+void LauncherWindow::applyDropImport(platform::windows::DropImportResult result)
+{
+    if (result.failed) {
+        MessageBoxW(
+            window_,
+            L"无法解析拖入内容。请检查文件或网址后重试。",
+            L"HLaunch 拖放",
+            MB_OK | MB_ICONERROR);
+        return;
+    }
+    if (result.targetTabIndex >= document_.tabs.size()) {
+        return;
+    }
+    if (result.items.empty()) {
+        MessageBoxW(
+            window_,
+            L"拖入内容中没有可添加的文件、文件夹、快捷方式或网址。",
+            L"HLaunch 拖放",
+            MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    auto preview = document_;
+    std::size_t duplicateCount{};
+    for (const auto& item : result.items) {
+        if (core::hasExactLaunchDuplicate(preview, item)) {
+            ++duplicateCount;
+        }
+        else {
+            preview.tabs[result.targetTabIndex].items.push_back(item);
+        }
+    }
+    const bool allowDuplicates = duplicateCount > 0
+        && MessageBoxW(
+               window_,
+               (L"发现 " + std::to_wstring(duplicateCount)
+                   + L" 个启动属性完全相同的条目。\n\n是否仍然添加？"
+                     L"选择“否”将跳过这些条目。")
+                   .c_str(),
+               L"HLaunch 重复条目",
+               MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2)
+            == IDYES;
+
+    for (auto& item : result.items) {
+        auto id = platform::windows::createUuidV4();
+        if (!id) {
+            MessageBoxW(window_, L"无法生成条目标识。", L"HLaunch 拖放", MB_OK | MB_ICONERROR);
+            return;
+        }
+        item.id = std::move(*id);
+    }
+
+    auto updatedDocument = document_;
+    const auto mutation = core::addImportedItems(
+        updatedDocument,
+        result.targetTabIndex,
+        std::move(result.items),
+        allowDuplicates);
+    if (!mutation || !core::validateItemsDocument(updatedDocument).empty()) {
+        MessageBoxW(
+            window_,
+            L"拖入条目超过数据限制或未通过校验，本次没有添加。",
+            L"HLaunch 拖放",
+            MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    if (!mutation->added.empty()) {
+        document_ = std::move(updatedDocument);
+        activeTabIndex_ = result.targetTabIndex;
+        focusedItemIndex_ = mutation->added.front().itemIndex;
+        pageOffset_ = 0;
+        searchVisible_ = false;
+        searchWindow_.setQuery({});
+        searchWindow_.hide();
+        rebuildSearchIndex();
+        ensureFocusedItemVisible();
+        if (documentChangedHandler_) {
+            documentChangedHandler_(document_);
+        }
+        InvalidateRect(window_, nullptr, FALSE);
+    }
+
+    if (mutation->skippedDuplicates > 0 || result.unsupportedCount > 0) {
+        std::wstring summary = L"已添加 " + std::to_wstring(mutation->added.size()) + L" 个条目。";
+        if (mutation->skippedDuplicates > 0) {
+            summary += L"\n跳过重复条目：" + std::to_wstring(mutation->skippedDuplicates) + L" 个。";
+        }
+        if (result.unsupportedCount > 0) {
+            summary += L"\n无法识别：" + std::to_wstring(result.unsupportedCount) + L" 个。";
+        }
+        MessageBoxW(window_, summary.c_str(), L"HLaunch 拖放", MB_OK | MB_ICONINFORMATION);
+    }
+}
+
+void LauncherWindow::shutdownDropServices() noexcept
+{
+    dropTarget_.revoke();
+    dropResolver_.reset();
+    if (!window_) {
+        return;
+    }
+    MSG pending{};
+    while (PeekMessageW(
+        &pending,
+        window_,
+        dropImportCompletedMessage,
+        dropImportCompletedMessage,
+        PM_REMOVE)) {
+        delete reinterpret_cast<platform::windows::DropImportResult*>(pending.lParam); // NOLINT(performance-no-int-to-ptr): This message owns the heap result.
+    }
 }
 
 void LauncherWindow::rebuildSearchIndex()

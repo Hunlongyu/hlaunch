@@ -72,6 +72,30 @@ target_link_libraries(
 
 add_test(NAME PROD-ITEM-001.mutations COMMAND hlaunch_item_operations_tests)
 
+add_executable(hlaunch_drop_item_resolver_tests drop_item_resolver_tests.cpp)
+
+target_link_libraries(
+    hlaunch_drop_item_resolver_tests
+    PRIVATE
+        HLaunch::PlatformWindows
+        HLaunch::ProjectOptions
+        doctest::doctest
+)
+
+add_test(NAME PROD-DROP-001.resolve COMMAND hlaunch_drop_item_resolver_tests)
+
+add_executable(hlaunch_drop_target_tests drop_target_tests.cpp)
+
+target_link_libraries(
+    hlaunch_drop_target_tests
+    PRIVATE
+        HLaunch::PlatformWindows
+        HLaunch::ProjectOptions
+        doctest::doctest
+)
+
+add_test(NAME PROD-DROP-001.ole-data-object COMMAND hlaunch_drop_target_tests)
+
 add_executable(hlaunch_app_ui_tests app_ui_tests.cpp)
 
 target_link_libraries(

@@ -6,6 +6,7 @@
 #include "ui/launcher_layout.h"
 #include "ui/launcher_window.h"
 
+#include <Ole2.h>
 #include <doctest/doctest.h>
 
 #include <array>
@@ -18,6 +19,22 @@
 #include <vector>
 
 namespace {
+
+class OleTestApartment final {
+public:
+    OleTestApartment() : result_(OleInitialize(nullptr)) {}
+    ~OleTestApartment()
+    {
+        if (SUCCEEDED(result_)) {
+            OleUninitialize();
+        }
+    }
+
+private:
+    HRESULT result_{};
+};
+
+OleTestApartment testOleApartment{};
 
 hlaunch::core::LaunchItem searchableItem(std::string id, std::string name)
 {

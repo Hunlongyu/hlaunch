@@ -119,6 +119,10 @@ add_library(
     hlaunch_platform_windows
     STATIC
         platform/windows/activation_command.h
+        platform/windows/drop_item_resolver.cpp
+        platform/windows/drop_item_resolver.h
+        platform/windows/drop_target.cpp
+        platform/windows/drop_target.h
         platform/windows/global_hotkey.cpp
         platform/windows/global_hotkey.h
         platform/windows/screen_edge_activation.cpp
@@ -153,8 +157,10 @@ target_link_libraries(
         advapi32
         dwmapi
         ole32
+        runtimeobject
         shcore
         shell32
+        shlwapi
         user32
 )
 

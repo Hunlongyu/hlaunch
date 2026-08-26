@@ -1,6 +1,6 @@
 # Windows 集成
 
-当前实现状态（2026-08-26）：已实现按当前用户 SID 隔离的 Named Mutex、固定类名隐藏激活窗口、`--show`、`--hide`、`--toggle` 的注册消息转发、全局快捷键注册、`Shell_NotifyIconW` 托盘图标，以及条目的 `ShellExecuteExW` 启动适配。快捷键可用时主实例无参数启动默认隐藏；快捷键禁用或注册失败且没有显式启动命令时暂时显示主窗。托盘支持显示/隐藏和退出，收到 `TaskbarCreated` 后重新添加；设置入口在设置页实现前保持禁用。同一完整性级别下实测第二实例退出且主实例保持唯一。Shell 适配保持目标、逻辑参数和工作目录分离，支持 `open`/`runas` 并区分 UAC 取消。`.lnk` 解析、有限重试、不同完整性级别 UIPI 和开机启动仍未实现。
+当前实现状态（2026-08-26）：已实现按当前用户 SID 隔离的 Named Mutex、固定类名隐藏激活窗口、`--show`、`--hide`、`--toggle` 的注册消息转发、全局快捷键注册、`Shell_NotifyIconW` 托盘图标、条目的 `ShellExecuteExW` 启动适配，以及 Launcher 的 OLE `IDropTarget` 注册与撤销。快捷键可用时主实例无参数启动默认隐藏；快捷键禁用或注册失败且没有显式启动命令时暂时显示主窗。托盘支持显示/隐藏和退出，收到 `TaskbarCreated` 后重新添加；设置入口在设置页实现前保持禁用。同一完整性级别下实测第二实例退出且主实例保持唯一。Shell 适配保持目标、逻辑参数和工作目录分离，支持 `open`/`runas` 并区分 UAC 取消。拖放接收 `CF_HDROP`、浏览器 URL 剪贴板格式和 Unicode URL 文本，文件属性与 URL 分类在后台完成，结果通过窗口消息回到 UI 线程。`.lnk` 启动解析、有限重试、不同完整性级别 UIPI 和开机启动仍未实现。
 
 ## Shell 启动与图标
 
@@ -14,6 +14,8 @@
 UI 主线程必须调用 `OleInitialize(nullptr)` 并在退出时成对 `OleUninitialize()`。`winrt::init_apartment` 不能替代 OLE 拖放初始化；仅使用 `winrt::com_ptr` 也不要求额外初始化 WinRT。若以后真正调用 WinRT API，应另行设计兼容 STA 的组合初始化并平衡每次成功调用，不能让两个 RAII 所有者无意重复管理同一 apartment。
 
 使用 `IDropTarget`、`IDataObject`、`RegisterDragDrop` 和 `RevokeDragDrop`。后台线程若调用 COM/Shell API，必须自行初始化合适 apartment，并保证接口按 COM 规则跨线程传递。
+
+当前实现仅在 UI 线程读取 `IDataObject` 并复制路径或 URL 字符串，不把 COM 接口跨线程传递；后台解析器按来源顺序生成领域条目。脚本式 URL scheme（`javascript:`、`vbscript:`、`data:`）拒绝导入。OLE 数据对象集成测试覆盖文件顺序、URL、复制效果和不支持格式；Explorer 与主流浏览器的真实鼠标拖入矩阵仍需人工验证。
 
 COM 接口默认用 `winrt::com_ptr`；HANDLE、HKEY、HICON、HMENU 等经典资源用 WIL RAII。
 

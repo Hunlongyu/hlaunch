@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <vector>
 
 namespace hlaunch::core {
 
@@ -23,6 +24,15 @@ enum class ItemMutationError : std::uint8_t
     DuplicateId,
 };
 
+struct BatchItemMutationResult
+{
+    std::vector<ItemLocation> added{};
+    std::size_t skippedDuplicates{};
+};
+
+[[nodiscard]] bool hasExactLaunchDuplicate(const ItemsDocument &document,
+                                           const LaunchItem &candidate) noexcept;
+
 [[nodiscard]] std::expected<ItemLocation, ItemMutationError>
 addItem(ItemsDocument &document, std::size_t targetTabIndex, LaunchItem item);
 
@@ -30,5 +40,9 @@ addItem(ItemsDocument &document, std::size_t targetTabIndex, LaunchItem item);
                                                                         ItemLocation source,
                                                                         std::size_t targetTabIndex,
                                                                         LaunchItem replacement);
+
+[[nodiscard]] std::expected<BatchItemMutationResult, ItemMutationError>
+addImportedItems(ItemsDocument &document, std::size_t targetTabIndex,
+                 std::vector<LaunchItem> items, bool allowExactDuplicates);
 
 } // namespace hlaunch::core

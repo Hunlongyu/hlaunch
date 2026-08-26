@@ -3,6 +3,8 @@
 #include "activation/activation_context.h"
 #include "core/data_model.h"
 #include "core/search_index.h"
+#include "platform/windows/drop_item_resolver.h"
+#include "platform/windows/drop_target.h"
 #include "platform/windows/window_effects.h"
 #include "ui/search_window.h"
 
@@ -12,6 +14,7 @@
 #include <winrt/base.h>
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -65,6 +68,11 @@ private:
     void handleMouseWheel(short delta);
     void showAddEditor();
     void showEditEditor(std::size_t absoluteIndex);
+    void submitDroppedSources(
+        std::vector<platform::windows::DroppedSource> sources,
+        POINTL screenPoint);
+    void applyDropImport(platform::windows::DropImportResult result);
+    void shutdownDropServices() noexcept;
     void rebuildSearchIndex();
     void activateFocusedItem();
     void changeActiveTab(std::size_t tabIndex);
@@ -101,6 +109,8 @@ private:
     bool windowFocused_{};
     LaunchHandler launchHandler_{};
     DocumentChangedHandler documentChangedHandler_{};
+    platform::windows::DropTarget dropTarget_{};
+    std::unique_ptr<platform::windows::DropItemResolver> dropResolver_{};
     SearchWindow searchWindow_{};
     winrt::com_ptr<ID2D1Factory> d2dFactory_{};
     winrt::com_ptr<IDWriteFactory> writeFactory_{};
