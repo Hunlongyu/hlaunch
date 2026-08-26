@@ -162,6 +162,7 @@ void LauncherWindow::show()
         searchWindow_.hide();
     }
     SetForegroundWindow(window_);
+    SetFocus(window_);
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -177,6 +178,7 @@ void LauncherWindow::showAtScreenEdge(const activation::ScreenEdgeHit& hit)
         searchWindow_.hide();
     }
     SetForegroundWindow(window_);
+    SetFocus(window_);
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -330,6 +332,20 @@ LRESULT LauncherWindow::handleMessage(
         return 0;
     case WM_ERASEBKGND:
         return 1;
+    case WM_GETDLGCODE:
+        return DLGC_WANTARROWS | DLGC_WANTTAB | DLGC_WANTALLKEYS;
+    case WM_SETFOCUS:
+        windowFocused_ = true;
+        InvalidateRect(window_, nullptr, FALSE);
+        return 0;
+    case WM_KILLFOCUS:
+        windowFocused_ = false;
+        InvalidateRect(window_, nullptr, FALSE);
+        return 0;
+    case WM_KEYDOWN:
+        return handleKeyDown(wParam)
+            ? 0
+            : DefWindowProcW(window_, message, wParam, lParam);
     case WM_NCHITTEST: {
         POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         ScreenToClient(window_, &point);
@@ -377,13 +393,16 @@ LRESULT LauncherWindow::handleMessage(
                 document_.tabs.size(),
                 xDip,
                 yDip)) {
-            activeTabIndex_ = *tabIndex;
-            InvalidateRect(window_, nullptr, FALSE);
+            SetFocus(window_);
+            changeActiveTab(*tabIndex);
             return 0;
         }
         if (const auto itemIndex = hitTestLauncherItem(layout, xDip, yDip)) {
             const auto* tab = activeTab();
             if (tab && *itemIndex < tab->items.size() && launchHandler_) {
+                focusedItemIndex_ = *itemIndex;
+                SetFocus(window_);
+                InvalidateRect(window_, nullptr, FALSE);
                 launchHandler_(tab->items[*itemIndex]);
             }
         }
@@ -697,6 +716,17 @@ void LauncherWindow::render()
             D2D1::RoundedRect(tile, cornerRadius, cornerRadius),
             borderBrush_.get(),
             1.0F);
+        if (!addTile && windowFocused_ && index == focusedItemIndex_) {
+            const auto focusBounds = D2D1::RectF(
+                tile.left + 2.0F,
+                tile.top + 2.0F,
+                tile.right - 2.0F,
+                tile.bottom - 2.0F);
+            renderTarget_->DrawRoundedRectangle(
+                D2D1::RoundedRect(focusBounds, cornerRadius - 2.0F, cornerRadius - 2.0F),
+                accentBrush_.get(),
+                2.0F);
+        }
 
         winrt::com_ptr<ID2D1SolidColorBrush> iconBrush{};
         renderTarget_->CreateSolidColorBrush(
@@ -741,6 +771,90 @@ void LauncherWindow::render()
     EndPaint(window_, &paint);
 }
 
+bool LauncherWindow::handleKeyDown(const WPARAM key)
+{
+    if (key == VK_ESCAPE) {
+        hide();
+        return true;
+    }
+    if (key == VK_RETURN) {
+        activateFocusedItem();
+        return true;
+    }
+    if (key == VK_TAB) {
+        if (const auto tabIndex = cycleLauncherTab(
+                activeTabIndex_,
+                document_.tabs.size(),
+                GetKeyState(VK_SHIFT) < 0)) {
+            changeActiveTab(*tabIndex);
+        }
+        return true;
+    }
+
+    std::optional<GridNavigationDirection> direction{};
+    switch (key) {
+    case VK_LEFT:
+        direction = GridNavigationDirection::Left;
+        break;
+    case VK_RIGHT:
+        direction = GridNavigationDirection::Right;
+        break;
+    case VK_UP:
+        direction = GridNavigationDirection::Up;
+        break;
+    case VK_DOWN:
+        direction = GridNavigationDirection::Down;
+        break;
+    case VK_HOME:
+        direction = GridNavigationDirection::First;
+        break;
+    case VK_END:
+        direction = GridNavigationDirection::Last;
+        break;
+    default:
+        return false;
+    }
+
+    RECT client{};
+    GetClientRect(window_, &client);
+    const float widthDip = static_cast<float>(client.right - client.left) * 96.0F
+        / static_cast<float>(dpi_);
+    const float heightDip = static_cast<float>(client.bottom - client.top) * 96.0F
+        / static_cast<float>(dpi_);
+    const auto layout = calculateLauncherLayout({
+        .clientWidthDip = widthDip,
+        .clientHeightDip = heightDip,
+        .itemCount = displayedTileCount(),
+    });
+    if (const auto itemIndex = navigateGridItem(
+            focusedItemIndex_,
+            visibleItemCount(),
+            layout.columns,
+            *direction)) {
+        focusedItemIndex_ = *itemIndex;
+        InvalidateRect(window_, nullptr, FALSE);
+    }
+    return true;
+}
+
+void LauncherWindow::activateFocusedItem()
+{
+    const auto* tab = activeTab();
+    if (tab && focusedItemIndex_ < visibleItemCount() && launchHandler_) {
+        launchHandler_(tab->items[focusedItemIndex_]);
+    }
+}
+
+void LauncherWindow::changeActiveTab(const std::size_t tabIndex)
+{
+    if (tabIndex >= document_.tabs.size()) {
+        return;
+    }
+    activeTabIndex_ = tabIndex;
+    focusedItemIndex_ = 0;
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
 const core::Tab* LauncherWindow::activeTab() const noexcept
 {
     if (activeTabIndex_ >= document_.tabs.size()) {
@@ -749,13 +863,18 @@ const core::Tab* LauncherWindow::activeTab() const noexcept
     return &document_.tabs[activeTabIndex_];
 }
 
-std::size_t LauncherWindow::displayedTileCount() const noexcept
+std::size_t LauncherWindow::visibleItemCount() const noexcept
 {
     const auto* tab = activeTab();
-    if (!tab) {
+    return tab ? std::min(tab->items.size(), maximumVisibleItems) : 0U;
+}
+
+std::size_t LauncherWindow::displayedTileCount() const noexcept
+{
+    if (!activeTab()) {
         return 0;
     }
-    const auto itemCount = tab->items.size();
+    const auto itemCount = visibleItemCount();
     if (itemCount >= maximumVisibleItems) {
         return maximumVisibleItems;
     }

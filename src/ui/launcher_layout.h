@@ -3,6 +3,7 @@
 #include "core/data_model.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -74,6 +75,15 @@ struct ScreenEdgePlacementRequest {
     core::ScreenEdgeZone zone{core::ScreenEdgeZone::Left};
 };
 
+enum class GridNavigationDirection : std::uint8_t {
+    Left,
+    Right,
+    Up,
+    Down,
+    First,
+    Last,
+};
+
 [[nodiscard]] LauncherLayout calculateLauncherLayout(
     const LauncherLayoutRequest& request,
     const LauncherMetrics& metrics = {});
@@ -97,6 +107,17 @@ struct ScreenEdgePlacementRequest {
     std::size_t tabCount,
     float xDip,
     float yDip) noexcept;
+
+[[nodiscard]] std::optional<std::size_t> navigateGridItem(
+    std::optional<std::size_t> currentIndex,
+    std::size_t itemCount,
+    std::size_t columns,
+    GridNavigationDirection direction) noexcept;
+
+[[nodiscard]] std::optional<std::size_t> cycleLauncherTab(
+    std::size_t currentIndex,
+    std::size_t tabCount,
+    bool backward) noexcept;
 
 [[nodiscard]] RectPixels calculateCenteredWindowRectangle(
     const RectPixels& workArea,

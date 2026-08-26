@@ -1,5 +1,7 @@
 # 可访问性契约
 
+当前实现状态（2026-08-26）：Launcher 已具备 Grid/Tab 键盘路径、Enter 启动、Esc 关闭和非纯颜色的条目焦点轮廓，并完成真实窗口消息验证。搜索键盘路径、UI Automation Provider、Narrator、Accessibility Insights、高对比度与文本缩放仍未实现或验证，因此 `UIA-001` 仅为部分验证。
+
 ## 基线
 
 所有主要操作必须能只用键盘完成。Direct2D 自绘不免除 UI Automation（UIA）责任；Settings 优先使用原生 Win32 Controls，Launcher 自绘节点提供自定义 UIA Provider。

@@ -51,7 +51,11 @@ private:
     void positionOnScreenEdge(const activation::ScreenEdgeHit& hit);
     void positionSearchWindow();
     void render();
+    [[nodiscard]] bool handleKeyDown(WPARAM key);
+    void activateFocusedItem();
+    void changeActiveTab(std::size_t tabIndex);
     [[nodiscard]] const core::Tab* activeTab() const noexcept;
+    [[nodiscard]] std::size_t visibleItemCount() const noexcept;
     [[nodiscard]] std::size_t displayedTileCount() const noexcept;
     void drawText(
         std::wstring_view text,
@@ -65,6 +69,8 @@ private:
     bool searchVisible_{};
     core::ItemsDocument document_{};
     std::size_t activeTabIndex_{};
+    std::size_t focusedItemIndex_{};
+    bool windowFocused_{};
     LaunchHandler launchHandler_{};
     SearchWindow searchWindow_{};
     winrt::com_ptr<ID2D1Factory> d2dFactory_{};

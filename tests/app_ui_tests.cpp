@@ -134,6 +134,32 @@ TEST_CASE("PROD-GRID-001 launcher hit testing resolves items and tabs")
         layout.tabs.y + 4.0F).has_value());
 }
 
+TEST_CASE("UIA-001 Grid keyboard navigation respects rows and incomplete final rows")
+{
+    using hlaunch::ui::GridNavigationDirection;
+    using hlaunch::ui::navigateGridItem;
+
+    CHECK(navigateGridItem(0, 6, 5, GridNavigationDirection::Left) == 0);
+    CHECK(navigateGridItem(0, 6, 5, GridNavigationDirection::Right) == 1);
+    CHECK(navigateGridItem(1, 6, 5, GridNavigationDirection::Down) == 5);
+    CHECK(navigateGridItem(5, 6, 5, GridNavigationDirection::Up) == 0);
+    CHECK(navigateGridItem(4, 6, 5, GridNavigationDirection::Right) == 4);
+    CHECK(navigateGridItem(0, 6, 5, GridNavigationDirection::Last) == 5);
+    CHECK(navigateGridItem(5, 6, 5, GridNavigationDirection::First) == 0);
+    CHECK_FALSE(navigateGridItem(0, 0, 5, GridNavigationDirection::Down).has_value());
+}
+
+TEST_CASE("UIA-001 Tab keyboard navigation wraps in both directions")
+{
+    using hlaunch::ui::cycleLauncherTab;
+
+    CHECK(cycleLauncherTab(0, 3, false) == 1);
+    CHECK(cycleLauncherTab(2, 3, false) == 0);
+    CHECK(cycleLauncherTab(0, 3, true) == 2);
+    CHECK(cycleLauncherTab(2, 3, true) == 1);
+    CHECK_FALSE(cycleLauncherTab(0, 0, false).has_value());
+}
+
 TEST_CASE("UI-DRAG-001 interactive launcher regions never initiate window dragging")
 {
     const auto layout = hlaunch::ui::calculateLauncherLayout({420.0F, 640.0F, 25});

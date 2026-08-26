@@ -137,6 +137,53 @@ std::optional<std::size_t> hitTestLauncherTab(
         tabCount - 1U);
 }
 
+std::optional<std::size_t> navigateGridItem(
+    const std::optional<std::size_t> currentIndex,
+    const std::size_t itemCount,
+    const std::size_t columns,
+    const GridNavigationDirection direction) noexcept
+{
+    if (itemCount == 0 || columns == 0) {
+        return std::nullopt;
+    }
+
+    const auto index = std::min(currentIndex.value_or(0), itemCount - 1U);
+    switch (direction) {
+    case GridNavigationDirection::Left:
+        return index % columns == 0 ? index : index - 1U;
+    case GridNavigationDirection::Right:
+        return index % columns + 1U < columns && index + 1U < itemCount
+            ? index + 1U
+            : index;
+    case GridNavigationDirection::Up:
+        return index >= columns ? index - columns : index;
+    case GridNavigationDirection::Down:
+        return index / columns < (itemCount - 1U) / columns
+            ? std::min(index + columns, itemCount - 1U)
+            : index;
+    case GridNavigationDirection::First:
+        return 0U;
+    case GridNavigationDirection::Last:
+        return itemCount - 1U;
+    }
+    return index;
+}
+
+std::optional<std::size_t> cycleLauncherTab(
+    const std::size_t currentIndex,
+    const std::size_t tabCount,
+    const bool backward) noexcept
+{
+    if (tabCount == 0) {
+        return std::nullopt;
+    }
+    const auto normalized = std::min(currentIndex, tabCount - 1U);
+    if (backward) {
+        return normalized == 0 ? tabCount - 1U : normalized - 1U;
+    }
+    return (normalized + 1U) % tabCount;
+}
+
 RectPixels calculateCenteredWindowRectangle(
     const RectPixels& workArea,
     const int windowWidth,
