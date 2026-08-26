@@ -55,6 +55,13 @@ struct SearchPopupLayout {
     RectDip field{};
 };
 
+struct RectPixels {
+    int left{};
+    int top{};
+    int right{};
+    int bottom{};
+};
+
 [[nodiscard]] LauncherLayout calculateLauncherLayout(
     const LauncherLayoutRequest& request,
     const LauncherMetrics& metrics = {});
@@ -67,5 +74,10 @@ struct SearchPopupLayout {
     const LauncherLayout& layout,
     float xDip,
     float yDip) noexcept;
+
+[[nodiscard]] RectPixels calculateCenteredWindowRectangle(
+    const RectPixels& workArea,
+    int windowWidth,
+    int windowHeight) noexcept;
 
 } // namespace hlaunch::ui

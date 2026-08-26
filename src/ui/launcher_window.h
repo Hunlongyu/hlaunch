@@ -38,6 +38,7 @@ private:
     [[nodiscard]] bool createDeviceIndependentResources();
     [[nodiscard]] bool createDeviceResources();
     void discardDeviceResources() noexcept;
+    void positionOnCursorMonitor();
     void positionSearchWindow();
     void render();
     void drawText(

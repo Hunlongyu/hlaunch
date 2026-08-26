@@ -72,6 +72,8 @@ add_library(
     hlaunch_platform_windows
     STATIC
         platform/windows/activation_command.h
+        platform/windows/global_hotkey.cpp
+        platform/windows/global_hotkey.h
         platform/windows/single_instance.cpp
         platform/windows/single_instance.h
         platform/windows/window_effects.cpp

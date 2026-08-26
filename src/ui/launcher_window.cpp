@@ -14,6 +14,8 @@ namespace {
 
 constexpr wchar_t launcherWindowClass[] = L"HLaunch.LauncherWindow.v1";
 constexpr float cornerRadius = 12.0F;
+constexpr int launcherWidthDip = 420;
+constexpr int launcherHeightDip = 640;
 
 struct PreviewItem {
     std::wstring_view name{};
@@ -84,8 +86,8 @@ bool LauncherWindow::create(
     }
 
     dpi_ = GetDpiForSystem();
-    const auto width = MulDiv(420, static_cast<int>(dpi_), 96);
-    const auto height = MulDiv(640, static_cast<int>(dpi_), 96);
+    const auto width = MulDiv(launcherWidthDip, static_cast<int>(dpi_), 96);
+    const auto height = MulDiv(launcherHeightDip, static_cast<int>(dpi_), 96);
     RECT workArea{};
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0);
     const auto x = workArea.left + ((workArea.right - workArea.left - width) / 2);
@@ -118,6 +120,7 @@ bool LauncherWindow::create(
 
 void LauncherWindow::show()
 {
+    positionOnCursorMonitor();
     ShowWindow(window_, SW_SHOWNORMAL);
     if (searchVisible_) {
         positionSearchWindow();
@@ -128,6 +131,47 @@ void LauncherWindow::show()
     }
     SetForegroundWindow(window_);
     InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::positionOnCursorMonitor()
+{
+    POINT cursor{};
+    if (!GetCursorPos(&cursor)) {
+        cursor = POINT{};
+    }
+    const auto monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info{};
+    info.cbSize = sizeof(MONITORINFO);
+    if (!monitor || !GetMonitorInfoW(monitor, &info)) {
+        return;
+    }
+
+    // Moving first lets WM_DPICHANGED update dpi_ before the final size and center
+    // are calculated. This avoids an old-DPI SetWindowPos overwriting the suggested
+    // rectangle when activation crosses monitors.
+    SetWindowPos(
+        window_,
+        nullptr,
+        info.rcWork.left,
+        info.rcWork.top,
+        0,
+        0,
+        SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
+
+    const int desiredWidth = MulDiv(launcherWidthDip, static_cast<int>(dpi_), 96);
+    const int desiredHeight = MulDiv(launcherHeightDip, static_cast<int>(dpi_), 96);
+    const auto placement = calculateCenteredWindowRectangle(
+        RectPixels{info.rcWork.left, info.rcWork.top, info.rcWork.right, info.rcWork.bottom},
+        desiredWidth,
+        desiredHeight);
+    SetWindowPos(
+        window_,
+        nullptr,
+        placement.left,
+        placement.top,
+        placement.right - placement.left,
+        placement.bottom - placement.top,
+        SWP_NOACTIVATE | SWP_NOZORDER);
 }
 
 void LauncherWindow::hide()

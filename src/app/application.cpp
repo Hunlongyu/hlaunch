@@ -32,6 +32,22 @@ void showStartupError(const wchar_t* message)
     MessageBoxW(nullptr, message, L"HLaunch", MB_OK | MB_ICONERROR);
 }
 
+void showHotkeyError(const HWND owner, const platform::windows::HotkeyError& error)
+{
+    std::wstring message{};
+    if (error.code == platform::windows::HotkeyErrorCode::InvalidConfiguration) {
+        message = L"全局快捷键配置无效，快捷键未启用。\n\n"
+                  L"请修正 config.json 中的 activation.hotkey 后重新启动 HLaunch。";
+    }
+    else {
+        message = L"无法注册配置的全局快捷键，快捷键未启用。\n\n"
+                  L"该组合可能已被系统或其他程序占用。请关闭占用程序后重新启动 HLaunch。"
+                  L"\n\n系统错误码：";
+        message += std::to_wstring(error.systemCode);
+    }
+    MessageBoxW(owner, message.c_str(), L"HLaunch 快捷键", MB_OK | MB_ICONWARNING);
+}
+
 } // namespace
 
 int Application::run(const HINSTANCE instance, const StartupOptions& options)
@@ -70,7 +86,7 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
     // bind these models to interactive controls.
     const auto config = infrastructure::filesystem::loadConfig(paths->configFile);
     const auto items = infrastructure::filesystem::loadItems(paths->itemsFile);
-    if (!config || !items) {
+    if (!config || !config->value || !items || !items->value) {
         showStartupError(L"无法读取 HLaunch 数据文件。");
         return 5;
     }
@@ -81,9 +97,21 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
         return 6;
     }
 
-    // Until hotkey and tray stages exist, showing on first launch keeps the UI scaffold
-    // reachable and gives the user a normal close path.
-    execute(options.activation.value_or(platform::windows::ActivationCommand::Show));
+    const auto& hotkeyConfig = config->value->activation.hotkey;
+    const auto hotkeyResult = hotkey_.apply(activationWindow_, hotkeyConfig);
+    const bool hotkeyAvailable = hotkeyResult.has_value() && hotkey_.isRegistered();
+
+    if (options.activation) {
+        execute(*options.activation);
+    }
+    else if (options.showSearch || !hotkeyAvailable) {
+        // Keep the application reachable while tray and settings UI are still pending.
+        execute(platform::windows::ActivationCommand::Show);
+    }
+
+    if (!hotkeyResult) {
+        showHotkeyError(launcher_.handle(), hotkeyResult.error());
+    }
 
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {
@@ -151,6 +179,10 @@ LRESULT Application::handleActivationMessage(
     if (message == platform::windows::activationMessageId()) {
         const auto command = static_cast<platform::windows::ActivationCommand>(wParam);
         execute(command);
+        return 0;
+    }
+    if (message == WM_HOTKEY && hotkey_.handlesMessage(wParam)) {
+        execute(platform::windows::ActivationCommand::Toggle);
         return 0;
     }
     return DefWindowProcW(activationWindow_, message, wParam, lParam);

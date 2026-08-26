@@ -46,3 +46,16 @@ target_link_libraries(
 )
 
 add_test(NAME PLAT-SINGLE-001.PROD-GRID-001.scaffold COMMAND hlaunch_app_ui_tests)
+
+add_executable(hlaunch_global_hotkey_tests global_hotkey_tests.cpp)
+
+target_link_libraries(
+    hlaunch_global_hotkey_tests
+    PRIVATE
+        HLaunch::Core
+        HLaunch::PlatformWindows
+        HLaunch::ProjectOptions
+        doctest::doctest
+)
+
+add_test(NAME ACT-HOTKEY-001.registration COMMAND hlaunch_global_hotkey_tests)

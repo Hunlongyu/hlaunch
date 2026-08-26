@@ -7,7 +7,7 @@
 | PROD-GRID-001 | Grid 优先、Tab 分类并支持跨 Tab 搜索 | `product-scope.md`、`launcher-ui.md` | UI 集成 + 键盘运行验证 | 部分验证（2026-08-26：静态 Grid、默认隐藏的底部附属搜索窗、贴底 Tab 与 DIP 单元测试；搜索与键盘交互未实现） |
 | UI-EFFECT-001 | 无边框窗口支持系统材质、表面 alpha 与整体透明度，并可安全降级 | `launcher-ui.md`、`themes.md` | 参数单元测试 + 各材质 Windows 运行截图 + 高对比度验证 | 部分验证（2026-08-26：参数测试、四种材质窗口创建与 DWM 属性读取通过；材质截图和高对比度未验证） |
 | UI-DRAG-001 | 除搜索、Grid、Tab 和关闭按钮外的客户区可拖动无边框窗口 | `launcher-ui.md` | 命中测试单元测试 + Windows 拖拽运行验证 | 部分验证（2026-08-26：DIP 单元测试与真实窗口 7 点 `WM_NCHITTEST` 探测通过；实际鼠标移动结果待人工确认） |
-| ACT-HOTKEY-001 | 默认启用 `Alt+Space`，冲突可恢复 | `activation-hotkey.md` | 单元 + Windows 运行验证 | 计划 |
+| ACT-HOTKEY-001 | 默认启用 `Alt+Space`，冲突可恢复 | `activation-hotkey.md` | 单元 + Windows 运行验证 | 部分验证（2026-08-26：结构化映射与冲突单元测试、真实 `RegisterHotKey`/`SendInput`/`WM_HOTKEY` 集成测试、Debug 默认隐藏与 Toggle 居中运行验证；设置页与物理键盘矩阵未完成） |
 | ACT-EDGE-001 | 边缘默认关闭，启用后 Show only | `activation-edge.md` | 状态机单元 + 多显示器运行验证 | 计划 |
 | DATA-CONFIG-001 | schema v1、校验、迁移与原子写入 | `data-and-config.md`、`schemas/` | 配置语料 + 故障注入集成测试 | 部分验证（2026-08-26：memory-codec + storage 故障保护；迁移与异步保存未完成） |
 | PLAT-SINGLE-001 | Mutex 所有权与隐藏窗口激活 | `windows-integration.md` | 双实例 + 完整性级别运行验证 | 部分验证（2026-08-26：同级双实例 hide/show 运行通过；UIPI 矩阵未验证） |

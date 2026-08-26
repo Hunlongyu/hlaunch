@@ -149,3 +149,26 @@ TEST_CASE("UI-DRAG-001 launcher chrome and spacing initiate window dragging")
         layout.grid.x + 8.0F,
         layout.grid.y + layout.grid.height + 6.0F));
 }
+
+TEST_CASE("ACT-HOTKEY-001 activation centers and constrains the launcher in the target work area")
+{
+    using hlaunch::ui::RectPixels;
+
+    const auto negativeMonitor = hlaunch::ui::calculateCenteredWindowRectangle(
+        RectPixels{-1920, 0, 0, 1040},
+        420,
+        640);
+    const auto smallerWorkArea = hlaunch::ui::calculateCenteredWindowRectangle(
+        RectPixels{100, 50, 400, 250},
+        420,
+        640);
+
+    CHECK(negativeMonitor.left == -1170);
+    CHECK(negativeMonitor.top == 200);
+    CHECK(negativeMonitor.right == -750);
+    CHECK(negativeMonitor.bottom == 840);
+    CHECK(smallerWorkArea.left == 100);
+    CHECK(smallerWorkArea.top == 50);
+    CHECK(smallerWorkArea.right == 400);
+    CHECK(smallerWorkArea.bottom == 250);
+}

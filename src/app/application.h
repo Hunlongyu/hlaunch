@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/command_line.h"
+#include "platform/windows/global_hotkey.h"
 #include "platform/windows/single_instance.h"
 #include "ui/launcher_window.h"
 
@@ -27,6 +28,7 @@ private:
     std::optional<platform::windows::SingleInstance> singleInstance_{};
     ui::LauncherWindow launcher_{};
     HWND activationWindow_{};
+    platform::windows::GlobalHotkey hotkey_{};
 };
 
 } // namespace hlaunch::app

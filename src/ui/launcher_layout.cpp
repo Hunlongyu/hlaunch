@@ -106,4 +106,18 @@ bool isLauncherDragRegion(
         && !contains(layout.tabs, xDip, yDip);
 }
 
+RectPixels calculateCenteredWindowRectangle(
+    const RectPixels& workArea,
+    const int windowWidth,
+    const int windowHeight) noexcept
+{
+    const int availableWidth = std::max(0, workArea.right - workArea.left);
+    const int availableHeight = std::max(0, workArea.bottom - workArea.top);
+    const int constrainedWidth = std::clamp(windowWidth, 0, availableWidth);
+    const int constrainedHeight = std::clamp(windowHeight, 0, availableHeight);
+    const int left = workArea.left + ((availableWidth - constrainedWidth) / 2);
+    const int top = workArea.top + ((availableHeight - constrainedHeight) / 2);
+    return RectPixels{left, top, left + constrainedWidth, top + constrainedHeight};
+}
+
 } // namespace hlaunch::ui
