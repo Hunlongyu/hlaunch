@@ -867,7 +867,6 @@ void LauncherWindow::render()
 
     const auto gridBounds = toD2dRect(layout.grid);
     renderTarget_->PushAxisAlignedClip(gridBounds, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-    const auto* tab = activeTab();
     const auto realItemCount = visibleItemCount();
     for (std::size_t index = 0; index < layout.items.size(); ++index) {
         const auto absoluteIndex = pageOffset_ + index;
@@ -972,17 +971,6 @@ void LauncherWindow::render()
     if (filtering && searchResults_.empty()) {
         drawText(
             L"没有找到匹配项",
-            D2D1::RectF(
-                gridBounds.left,
-                gridBounds.top + 92.0F,
-                gridBounds.right,
-                gridBounds.top + 128.0F),
-            bodyFormat_.get(),
-            mutedTextBrush_.get());
-    }
-    else if (!filtering && tab && tab->items.empty()) {
-        drawText(
-            L"暂无条目",
             D2D1::RectF(
                 gridBounds.left,
                 gridBounds.top + 92.0F,
