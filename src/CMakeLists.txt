@@ -176,6 +176,8 @@ add_library(
     STATIC
         ui/launcher_layout.cpp
         ui/launcher_layout.h
+        ui/item_context_menu.cpp
+        ui/item_context_menu.h
         ui/launcher_window.cpp
         ui/launcher_window.h
         ui/item_editor_dialog.cpp

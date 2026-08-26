@@ -4,6 +4,7 @@
 #include "core/data_validation.h"
 #include "platform/windows/search_text.h"
 #include "platform/windows/uuid.h"
+#include "ui/item_context_menu.h"
 #include "ui/item_editor_dialog.h"
 #include "ui/launcher_layout.h"
 
@@ -33,9 +34,6 @@ constexpr std::size_t maximumVisibleItems = 25;
 constexpr std::size_t maximumIconCacheEntries = 128;
 constexpr UINT dropImportCompletedMessage = WM_APP + 0x43U;
 constexpr UINT iconLoadCompletedMessage = WM_APP + 0x44U;
-constexpr UINT_PTR editItemMenuCommand = 1U;
-constexpr UINT_PTR deleteItemMenuCommand = 2U;
-
 std::wstring utf8ToWide(const std::string_view value)
 {
     if (value.empty()) {
@@ -1418,7 +1416,8 @@ void LauncherWindow::showItemContextMenu(
     const std::size_t absoluteIndex,
     const POINT screenPoint)
 {
-    if (!itemLocationForDisplayedIndex(absoluteIndex)) {
+    const auto itemLocation = itemLocationForDisplayedIndex(absoluteIndex);
+    if (!itemLocation) {
         return;
     }
     focusedItemIndex_ = absoluteIndex;
@@ -1426,13 +1425,10 @@ void LauncherWindow::showItemContextMenu(
     SetFocus(window_);
     InvalidateRect(window_, nullptr, FALSE);
 
-    wil::unique_hmenu menu{CreatePopupMenu()};
+    auto menu = createItemContextMenu(document_, *itemLocation);
     if (!menu) {
-        showEditEditor(absoluteIndex);
         return;
     }
-    AppendMenuW(menu.get(), MF_STRING, editItemMenuCommand, L"编辑\tF2");
-    AppendMenuW(menu.get(), MF_STRING, deleteItemMenuCommand, L"删除\tDel");
 
     SetForegroundWindow(window_);
     const auto selected = TrackPopupMenuEx(
@@ -1443,10 +1439,13 @@ void LauncherWindow::showItemContextMenu(
         window_,
         nullptr);
     PostMessageW(window_, WM_NULL, 0, 0);
-    if (selected == editItemMenuCommand) {
+    if (selected == static_cast<UINT>(ItemContextCommand::Open)) {
+        activateFocusedItem();
+    }
+    else if (selected == static_cast<UINT>(ItemContextCommand::Edit)) {
         showEditEditor(absoluteIndex);
     }
-    else if (selected == deleteItemMenuCommand) {
+    else if (selected == static_cast<UINT>(ItemContextCommand::Delete)) {
         deleteItem(absoluteIndex);
     }
 }

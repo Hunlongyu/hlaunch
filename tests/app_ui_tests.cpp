@@ -3,6 +3,7 @@
 #include "app/command_line.h"
 #include "platform/windows/activation_command.h"
 #include "platform/windows/window_effects.h"
+#include "ui/item_context_menu.h"
 #include "ui/launcher_layout.h"
 #include "ui/launcher_window.h"
 
@@ -75,6 +76,43 @@ hlaunch::ui::LauncherLayout launcherLayoutFor(const HWND window, const std::size
 }
 
 } // namespace
+
+TEST_CASE("PROD-ITEM-001 item context menu exposes complete grouped actions")
+{
+    const hlaunch::core::ItemsDocument document{
+        .tabs = {
+            hlaunch::core::Tab{
+                .id = "11111111-1111-4111-8111-111111111111",
+                .name = "默认",
+                .items = {searchableItem("22222222-2222-4222-8222-222222222222", "示例")},
+            },
+            hlaunch::core::Tab{
+                .id = "33333333-3333-4333-8333-333333333333",
+                .name = "工作&开发",
+            },
+        },
+    };
+
+    const auto menu = hlaunch::ui::createItemContextMenu(document, {0, 0});
+    REQUIRE(menu);
+    CHECK(GetMenuItemCount(menu.get()) == 11);
+    CHECK(GetMenuItemID(menu.get(), 0) == static_cast<UINT>(hlaunch::ui::ItemContextCommand::Open));
+    CHECK(GetMenuItemID(menu.get(), 6) == static_cast<UINT>(hlaunch::ui::ItemContextCommand::Edit));
+    CHECK(GetMenuItemID(menu.get(), 9) == static_cast<UINT>(hlaunch::ui::ItemContextCommand::Delete));
+    CHECK((GetMenuState(menu.get(), 1, MF_BYPOSITION) & (MF_DISABLED | MF_GRAYED)) != 0U);
+    CHECK((GetMenuState(menu.get(), 10, MF_BYPOSITION) & (MF_DISABLED | MF_GRAYED)) != 0U);
+
+    const auto copyMenu = GetSubMenu(menu.get(), 4);
+    REQUIRE(copyMenu != nullptr);
+    CHECK(GetMenuItemCount(copyMenu) == 3);
+    CHECK((GetMenuState(copyMenu, 0, MF_BYPOSITION) & (MF_DISABLED | MF_GRAYED)) != 0U);
+
+    const auto moveMenu = GetSubMenu(menu.get(), 7);
+    REQUIRE(moveMenu != nullptr);
+    CHECK(GetMenuItemCount(moveMenu) == 2);
+    CHECK((GetMenuState(moveMenu, 0, MF_BYPOSITION) & MF_CHECKED) != 0U);
+    CHECK((GetMenuState(moveMenu, 1, MF_BYPOSITION) & MF_CHECKED) == 0U);
+}
 
 TEST_CASE("PLAT-SINGLE-001 command line maps activation commands without payload pointers")
 {
