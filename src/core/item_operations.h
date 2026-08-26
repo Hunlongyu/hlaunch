@@ -41,6 +41,9 @@ addItem(ItemsDocument &document, std::size_t targetTabIndex, LaunchItem item);
                                                                         std::size_t targetTabIndex,
                                                                         LaunchItem replacement);
 
+[[nodiscard]] std::expected<LaunchItem, ItemMutationError>
+removeItem(ItemsDocument &document, ItemLocation source);
+
 [[nodiscard]] std::expected<BatchItemMutationResult, ItemMutationError>
 addImportedItems(ItemsDocument &document, std::size_t targetTabIndex,
                  std::vector<LaunchItem> items, bool allowExactDuplicates);

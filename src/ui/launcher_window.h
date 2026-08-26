@@ -2,10 +2,12 @@
 
 #include "activation/activation_context.h"
 #include "core/data_model.h"
+#include "core/item_operations.h"
 #include "core/search_index.h"
 #include "platform/windows/drop_item_resolver.h"
 #include "platform/windows/drop_target.h"
 #include "platform/windows/window_effects.h"
+#include "ui/item_editor_dialog.h"
 #include "ui/search_window.h"
 
 #include <Windows.h>
@@ -26,6 +28,12 @@ class LauncherWindow final {
 public:
     using LaunchHandler = std::function<void(const core::LaunchItem&)>;
     using DocumentChangedHandler = std::function<void(const core::ItemsDocument&)>;
+    using DeleteConfirmationHandler = std::function<bool(HWND, const core::LaunchItem&)>;
+    using ItemEditorHandler = std::function<std::optional<ItemEditorResult>(
+        HWND,
+        const std::vector<core::Tab>&,
+        std::size_t,
+        const core::LaunchItem*)>;
 
     LauncherWindow() = default;
     ~LauncherWindow();
@@ -41,6 +49,8 @@ public:
         LaunchHandler launchHandler,
         DocumentChangedHandler documentChangedHandler = {});
     void setDocumentChangedHandler(DocumentChangedHandler handler);
+    void setDeleteConfirmationHandler(DeleteConfirmationHandler handler);
+    void setItemEditorHandler(ItemEditorHandler handler);
     void show();
     void showAtScreenEdge(const activation::ScreenEdgeHit& hit);
     void hide();
@@ -68,6 +78,8 @@ private:
     void handleMouseWheel(short delta);
     void showAddEditor();
     void showEditEditor(std::size_t absoluteIndex);
+    void showItemContextMenu(std::size_t absoluteIndex, POINT screenPoint);
+    void deleteItem(std::size_t absoluteIndex);
     void submitDroppedSources(
         std::vector<platform::windows::DroppedSource> sources,
         POINTL screenPoint);
@@ -81,6 +93,8 @@ private:
         const core::LaunchItem* item{};
         const core::Tab* tab{};
     };
+    [[nodiscard]] std::optional<core::ItemLocation>
+    itemLocationForDisplayedIndex(std::size_t index) const noexcept;
     [[nodiscard]] std::optional<DisplayedItem> displayedItem(std::size_t index) const noexcept;
     [[nodiscard]] bool isSearchFiltering() const noexcept;
     [[nodiscard]] std::size_t totalItemCount() const noexcept;
@@ -109,6 +123,8 @@ private:
     bool windowFocused_{};
     LaunchHandler launchHandler_{};
     DocumentChangedHandler documentChangedHandler_{};
+    DeleteConfirmationHandler deleteConfirmationHandler_{};
+    ItemEditorHandler itemEditorHandler_{};
     platform::windows::DropTarget dropTarget_{};
     std::unique_ptr<platform::windows::DropItemResolver> dropResolver_{};
     SearchWindow searchWindow_{};

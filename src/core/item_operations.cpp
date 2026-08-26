@@ -82,6 +82,24 @@ std::expected<ItemLocation, ItemMutationError> updateItem(ItemsDocument &documen
     return ItemLocation{targetTabIndex, targetItems.size() - 1U};
 }
 
+std::expected<LaunchItem, ItemMutationError>
+removeItem(ItemsDocument &document, const ItemLocation source)
+{
+    if (source.tabIndex >= document.tabs.size())
+    {
+        return std::unexpected(ItemMutationError::InvalidTab);
+    }
+    auto &items = document.tabs[source.tabIndex].items;
+    if (source.itemIndex >= items.size())
+    {
+        return std::unexpected(ItemMutationError::InvalidItem);
+    }
+
+    LaunchItem removed = std::move(items[source.itemIndex]);
+    items.erase(items.begin() + static_cast<std::ptrdiff_t>(source.itemIndex));
+    return removed;
+}
+
 std::expected<BatchItemMutationResult, ItemMutationError>
 addImportedItems(ItemsDocument &document, const std::size_t targetTabIndex,
                  std::vector<LaunchItem> items, const bool allowExactDuplicates)

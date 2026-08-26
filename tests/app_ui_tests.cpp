@@ -10,11 +10,8 @@
 #include <doctest/doctest.h>
 
 #include <array>
-#include <atomic>
-#include <chrono>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -43,18 +40,6 @@ hlaunch::core::LaunchItem searchableItem(std::string id, std::string name)
         .name = std::move(name),
         .target = "not-used-by-test",
     };
-}
-
-HWND waitForWindow(const wchar_t* className, const wchar_t* title)
-{
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
-    while (std::chrono::steady_clock::now() < deadline) {
-        if (const auto window = FindWindowW(className, title)) {
-            return window;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds{10});
-    }
-    return nullptr;
 }
 
 void clearPendingQuitMessages()
@@ -291,8 +276,7 @@ TEST_CASE("PROD-GRID-001 search results remain available beyond the first page")
     CHECK(launchedId == "item-25");
 }
 
-TEST_CASE("PROD-ITEM-001 native editor adds and moves an item while preserving "
-          "identity")
+TEST_CASE("PROD-ITEM-001 launcher adds and moves an item while preserving identity")
 {
     clearPendingQuitMessages();
     hlaunch::core::ItemsDocument document{
@@ -311,9 +295,8 @@ TEST_CASE("PROD-ITEM-001 native editor adds and moves an item while preserving "
     hlaunch::core::ItemsDocument latest{};
     std::string firstId{};
     std::string launchedId{};
-    std::atomic_uint32_t changeCount{};
-    std::atomic_int failureStep{};
-    std::atomic_bool driverDone{};
+    std::uint32_t changeCount{};
+    std::uint32_t editorCallCount{};
 
     hlaunch::ui::LauncherWindow launcher{};
     REQUIRE(launcher.create(
@@ -325,87 +308,51 @@ TEST_CASE("PROD-ITEM-001 native editor adds and moves an item while preserving "
         [&launchedId](const hlaunch::core::LaunchItem& item) { launchedId = item.id; },
         [&](const hlaunch::core::ItemsDocument& changed) {
             latest = changed;
-            if (changeCount.fetch_add(1U) == 0U) {
+            if (changeCount++ == 0U) {
                 firstId = changed.tabs[1].items.front().id;
             }
         }));
-
-    std::jthread driver{[&] {
-        constexpr UINT comboSetSelection = CB_SETCURSEL;
-        constexpr UINT buttonSetCheck = BM_SETCHECK;
-        constexpr UINT buttonClick = BM_CLICK;
-        auto fail = [&](const int step) {
-            failureStep = step;
-            driverDone = true;
-        };
-
-        if (!PostMessageW(launcher.handle(), WM_KEYDOWN, VK_INSERT, 0)) {
-            fail(1);
-            return;
-        }
-        const auto addEditor = waitForWindow(L"HLaunch.ItemEditor.v1", L"添加条目");
-        if (!addEditor) {
-            fail(2);
-            return;
-        }
-        SetWindowTextW(GetDlgItem(addEditor, 1001), L"运行验证条目");
-        SendMessageW(GetDlgItem(addEditor, 1002), comboSetSelection, 3, 0);
-        SetWindowTextW(GetDlgItem(addEditor, 1003), L"https://example.com");
-        SetWindowTextW(GetDlgItem(addEditor, 1004), L"--profile\r\nwork");
-        SetWindowTextW(GetDlgItem(addEditor, 1005), L"C:\\Windows");
-        SetWindowTextW(GetDlgItem(addEditor, 1006), L"C:\\Windows\\System32\\shell32.dll");
-        SendMessageW(GetDlgItem(addEditor, 1007), comboSetSelection, 1, 0);
-        SendMessageW(GetDlgItem(addEditor, 1008), buttonSetCheck, BST_CHECKED, 0);
-        SendMessageW(GetDlgItem(addEditor, 1009), buttonClick, 0, 0);
-
-        const auto addDeadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
-        while (changeCount.load() != 1U && std::chrono::steady_clock::now() < addDeadline) {
-            std::this_thread::sleep_for(std::chrono::milliseconds{10});
-        }
-        if (changeCount.load() != 1U) {
-            fail(3);
-            return;
-        }
-        if (!PostMessageW(launcher.handle(), WM_KEYDOWN, VK_F2, 0)) {
-            fail(6);
-            return;
-        }
-        const auto editEditor = waitForWindow(L"HLaunch.ItemEditor.v1", L"编辑条目");
-        if (!editEditor) {
-            fail(4);
-            return;
-        }
-        SetWindowTextW(GetDlgItem(editEditor, 1001), L"已编辑条目");
-        SetWindowTextW(GetDlgItem(editEditor, 1003), L"https://example.org/final");
-        SendMessageW(GetDlgItem(editEditor, 1007), comboSetSelection, 0, 0);
-        SendMessageW(GetDlgItem(editEditor, 1009), buttonClick, 0, 0);
-        const auto editDeadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
-        while (changeCount.load() != 2U && std::chrono::steady_clock::now() < editDeadline) {
-            std::this_thread::sleep_for(std::chrono::milliseconds{10});
-        }
-        if (changeCount.load() != 2U) {
-            fail(5);
-            return;
-        }
-        driverDone = true;
-    }};
-
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{15};
-    while (!driverDone.load() && std::chrono::steady_clock::now() < deadline) {
-        MSG message{};
-        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
-            if (message.message != WM_QUIT) {
-                TranslateMessage(&message);
-                DispatchMessageW(&message);
+    launcher.setItemEditorHandler(
+        [&](HWND owner,
+            const std::vector<hlaunch::core::Tab>& tabs,
+            const std::size_t initialTabIndex,
+            const hlaunch::core::LaunchItem* initial) -> std::optional<hlaunch::ui::ItemEditorResult> {
+            CHECK(owner == launcher.handle());
+            CHECK(tabs.size() == 2);
+            if (editorCallCount++ == 0U) {
+                CHECK(initial == nullptr);
+                CHECK(initialTabIndex == 0U);
+                return hlaunch::ui::ItemEditorResult{
+                    .item = hlaunch::core::LaunchItem{
+                        .type = hlaunch::core::ItemType::Url,
+                        .name = "运行验证条目",
+                        .target = "https://example.com",
+                        .arguments = {"--profile", "work"},
+                        .workingDirectory = "C:\\Windows",
+                        .icon = "C:\\Windows\\System32\\shell32.dll",
+                        .runAsAdministrator = true,
+                    },
+                    .tabIndex = 1,
+                };
             }
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
-    }
-    driver.join();
+            REQUIRE(initial != nullptr);
+            CHECK(initialTabIndex == 1U);
+            auto edited = *initial;
+            edited.name = "已编辑条目";
+            edited.target = "https://example.org/final";
+            return hlaunch::ui::ItemEditorResult{
+                .item = std::move(edited),
+                .tabIndex = 0,
+            };
+        });
 
-    REQUIRE(driverDone.load());
-    REQUIRE(failureStep.load() == 0);
-    REQUIRE(changeCount.load() == 2U);
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_INSERT, 0);
+    REQUIRE(changeCount == 1U);
+    REQUIRE_FALSE(firstId.empty());
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_F2, 0);
+
+    REQUIRE(editorCallCount == 2U);
+    REQUIRE(changeCount == 2U);
     REQUIRE(latest.tabs[0].items.size() == 1U);
     CHECK(latest.tabs[1].items.empty());
     const auto& item = latest.tabs[0].items.front();
@@ -426,6 +373,72 @@ TEST_CASE("PROD-ITEM-001 native editor adds and moves an item while preserving "
     }
     SendMessageW(search, WM_KEYDOWN, VK_RETURN, 0);
     CHECK(launchedId == firstId);
+}
+
+TEST_CASE("PROD-ITEM-001 Delete removes the focused item and keeps adjacent focus")
+{
+    clearPendingQuitMessages();
+    constexpr std::string_view firstId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    constexpr std::string_view secondId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "Common",
+            .items = {
+                searchableItem(std::string{firstId}, "First"),
+                searchableItem(std::string{secondId}, "Second"),
+            },
+        }},
+    };
+    hlaunch::core::ItemsDocument latest{};
+    std::string launchedId{};
+    std::string confirmedId{};
+    std::uint32_t changeCount{};
+
+    hlaunch::ui::LauncherWindow launcher{};
+    REQUIRE(launcher.create(
+        GetModuleHandleW(nullptr),
+        hlaunch::platform::windows::WindowEffects{
+            .backdrop = hlaunch::platform::windows::WindowBackdrop::Solid,
+        },
+        false,
+        std::move(document),
+        [&launchedId](const hlaunch::core::LaunchItem& item) { launchedId = item.id; },
+        [&](const hlaunch::core::ItemsDocument& changed) {
+            latest = changed;
+            ++changeCount;
+        }));
+    launcher.setDeleteConfirmationHandler(
+        [&](HWND owner, const hlaunch::core::LaunchItem& item) {
+            CHECK(owner == launcher.handle());
+            confirmedId = item.id;
+            return false;
+        });
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_DELETE, 0);
+    CHECK(confirmedId == firstId);
+    CHECK(changeCount == 0U);
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_RETURN, 0);
+    CHECK(launchedId == firstId);
+
+    confirmedId.clear();
+    launchedId.clear();
+    launcher.setDeleteConfirmationHandler(
+        [&](HWND owner, const hlaunch::core::LaunchItem& item) {
+            CHECK(owner == launcher.handle());
+            confirmedId = item.id;
+            return true;
+        });
+
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_DELETE, 0);
+
+    CHECK(confirmedId == firstId);
+    CHECK(changeCount == 1U);
+    REQUIRE(latest.tabs.size() == 1);
+    REQUIRE(latest.tabs[0].items.size() == 1);
+    CHECK(latest.tabs[0].items[0].id == secondId);
+
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_RETURN, 0);
+    CHECK(launchedId == secondId);
 }
 
 TEST_CASE("PROD-GRID-001 launcher layout always retains at least one column")

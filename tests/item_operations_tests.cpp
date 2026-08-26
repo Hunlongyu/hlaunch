@@ -116,3 +116,33 @@ TEST_CASE("PROD-DROP-001 batch import preserves order and skips exact duplicates
     CHECK(document.tabs.front().items[1].name == "First");
     CHECK(document.tabs.front().items[2].name == "Second");
 }
+
+TEST_CASE("PROD-ITEM-001 remove returns the item and preserves sibling order")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "One",
+            .items = {
+                {.id = "first", .name = "First"},
+                {.id = "second", .name = "Second"},
+                {.id = "third", .name = "Third"},
+            },
+        }},
+    };
+
+    const auto removed = hlaunch::core::removeItem(document, {0, 1});
+
+    REQUIRE(removed.has_value());
+    CHECK(removed->id == "second");
+    REQUIRE(document.tabs[0].items.size() == 2);
+    CHECK(document.tabs[0].items[0].id == "first");
+    CHECK(document.tabs[0].items[1].id == "third");
+
+    const auto invalidTab = hlaunch::core::removeItem(document, {1, 0});
+    REQUIRE_FALSE(invalidTab.has_value());
+    CHECK(invalidTab.error() == hlaunch::core::ItemMutationError::InvalidTab);
+    const auto invalidItem = hlaunch::core::removeItem(document, {0, 2});
+    REQUIRE_FALSE(invalidItem.has_value());
+    CHECK(invalidItem.error() == hlaunch::core::ItemMutationError::InvalidItem);
+}

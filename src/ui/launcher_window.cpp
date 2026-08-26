@@ -9,6 +9,7 @@
 
 #include <d2d1helper.h>
 #include <windowsx.h>
+#include <wil/resource.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -28,6 +29,8 @@ constexpr int launcherHeightDip = 640;
 
 constexpr std::size_t maximumVisibleItems = 25;
 constexpr UINT dropImportCompletedMessage = WM_APP + 0x43U;
+constexpr UINT_PTR editItemMenuCommand = 1U;
+constexpr UINT_PTR deleteItemMenuCommand = 2U;
 
 std::wstring utf8ToWide(const std::string_view value)
 {
@@ -177,7 +180,7 @@ bool LauncherWindow::create(
                         dropImportCompletedMessage,
                         0,
                         reinterpret_cast<LPARAM>(payload.get()))) { // NOLINT(performance-no-int-to-ptr): Internal message transfers this heap result to the UI thread.
-                    static_cast<void>(payload.release());
+                    payload.release(); // NOLINT(bugprone-unused-return-value,clang-analyzer-cplusplus.NewDeleteLeaks): The posted UI message owns and deletes the result.
                 }
             });
     }
@@ -199,6 +202,16 @@ bool LauncherWindow::create(
 void LauncherWindow::setDocumentChangedHandler(DocumentChangedHandler handler)
 {
     documentChangedHandler_ = std::move(handler);
+}
+
+void LauncherWindow::setDeleteConfirmationHandler(DeleteConfirmationHandler handler)
+{
+    deleteConfirmationHandler_ = std::move(handler);
+}
+
+void LauncherWindow::setItemEditorHandler(ItemEditorHandler handler)
+{
+    itemEditorHandler_ = std::move(handler);
 }
 
 void LauncherWindow::show()
@@ -518,7 +531,9 @@ LRESULT LauncherWindow::handleMessage(
         });
         if (const auto itemIndex = hitTestLauncherItem(layout, xDip, yDip);
             itemIndex && *itemIndex < visibleItemCount()) {
-            showEditEditor(pageOffset_ + *itemIndex);
+            POINT screenPoint{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            ClientToScreen(window_, &screenPoint);
+            showItemContextMenu(pageOffset_ + *itemIndex, screenPoint);
         }
         return 0;
     }
@@ -995,6 +1010,10 @@ bool LauncherWindow::handleKeyDown(const WPARAM key)
         showEditEditor(focusedItemIndex_);
         return true;
     }
+    if (key == VK_DELETE && totalItemCount() > 0) {
+        deleteItem(focusedItemIndex_);
+        return true;
+    }
     if (key == L'F' && GetKeyState(VK_CONTROL) < 0) {
         beginSearch();
         return true;
@@ -1183,7 +1202,9 @@ void LauncherWindow::handleMouseWheel(const short delta)
 
 void LauncherWindow::showAddEditor()
 {
-    auto edited = ItemEditorDialog::show(window_, document_.tabs, activeTabIndex_);
+    auto edited = itemEditorHandler_
+        ? itemEditorHandler_(window_, document_.tabs, activeTabIndex_, nullptr)
+        : ItemEditorDialog::show(window_, document_.tabs, activeTabIndex_);
     if (!edited) {
         return;
     }
@@ -1228,7 +1249,9 @@ void LauncherWindow::showEditEditor(const std::size_t absoluteIndex)
     if (source.tabIndex >= document_.tabs.size()
         || source.itemIndex >= document_.tabs[source.tabIndex].items.size()) return;
     const auto* initial = &document_.tabs[source.tabIndex].items[source.itemIndex];
-    auto edited = ItemEditorDialog::show(window_, document_.tabs, source.tabIndex, initial);
+    auto edited = itemEditorHandler_
+        ? itemEditorHandler_(window_, document_.tabs, source.tabIndex, initial)
+        : ItemEditorDialog::show(window_, document_.tabs, source.tabIndex, initial);
     if (!edited) return;
 
     auto updatedDocument = document_;
@@ -1251,6 +1274,106 @@ void LauncherWindow::showEditEditor(const std::size_t absoluteIndex)
     rebuildSearchIndex();
     ensureFocusedItemVisible();
     if (documentChangedHandler_) documentChangedHandler_(document_);
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::showItemContextMenu(
+    const std::size_t absoluteIndex,
+    const POINT screenPoint)
+{
+    if (!itemLocationForDisplayedIndex(absoluteIndex)) {
+        return;
+    }
+    focusedItemIndex_ = absoluteIndex;
+    ensureFocusedItemVisible();
+    SetFocus(window_);
+    InvalidateRect(window_, nullptr, FALSE);
+
+    wil::unique_hmenu menu{CreatePopupMenu()};
+    if (!menu) {
+        showEditEditor(absoluteIndex);
+        return;
+    }
+    AppendMenuW(menu.get(), MF_STRING, editItemMenuCommand, L"编辑\tF2");
+    AppendMenuW(menu.get(), MF_STRING, deleteItemMenuCommand, L"删除\tDel");
+
+    SetForegroundWindow(window_);
+    const auto selected = TrackPopupMenuEx(
+        menu.get(),
+        TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_WORKAREA,
+        screenPoint.x,
+        screenPoint.y,
+        window_,
+        nullptr);
+    PostMessageW(window_, WM_NULL, 0, 0);
+    if (selected == editItemMenuCommand) {
+        showEditEditor(absoluteIndex);
+    }
+    else if (selected == deleteItemMenuCommand) {
+        deleteItem(absoluteIndex);
+    }
+}
+
+void LauncherWindow::deleteItem(const std::size_t absoluteIndex)
+{
+    const auto source = itemLocationForDisplayedIndex(absoluteIndex);
+    if (!source || source->tabIndex >= document_.tabs.size()
+        || source->itemIndex >= document_.tabs[source->tabIndex].items.size()) {
+        return;
+    }
+
+    const auto& item = document_.tabs[source->tabIndex].items[source->itemIndex];
+    std::wstring prompt = L"确定删除“";
+    prompt.append(utf8ToWide(item.name));
+    prompt.append(L"”吗？\n\n此操作会从 HLaunch 中移除该条目。");
+    const bool confirmed = deleteConfirmationHandler_
+        ? deleteConfirmationHandler_(window_, item)
+        : MessageBoxW(
+              window_,
+              prompt.c_str(),
+              L"HLaunch 删除条目",
+              MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
+    if (!confirmed) {
+        if (isSearchFiltering()) {
+            searchWindow_.show();
+        }
+        return;
+    }
+
+    const bool wasFiltering = isSearchFiltering();
+    const std::wstring query{searchWindow_.query()};
+    const auto previousFocus = focusedItemIndex_;
+    auto updatedDocument = document_;
+    const auto removed = core::removeItem(updatedDocument, *source);
+    if (!removed || !core::validateItemsDocument(updatedDocument).empty()) {
+        MessageBoxW(
+            window_,
+            L"无法删除该条目，数据未发生变化。",
+            L"HLaunch 删除条目",
+            MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    document_ = std::move(updatedDocument);
+    rebuildSearchIndex();
+    if (wasFiltering) {
+        updateSearch(query);
+        if (!searchResults_.empty()) {
+            focusedItemIndex_ = std::min(previousFocus, searchResults_.size() - 1U);
+        }
+        ensureFocusedItemVisible();
+        searchWindow_.show();
+    }
+    else {
+        const auto itemCount = totalItemCount();
+        focusedItemIndex_ = itemCount == 0
+            ? 0U
+            : std::min(previousFocus, itemCount - 1U);
+        ensureFocusedItemVisible();
+    }
+    if (documentChangedHandler_) {
+        documentChangedHandler_(document_);
+    }
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -1437,6 +1560,25 @@ const core::Tab* LauncherWindow::activeTab() const noexcept
         return nullptr;
     }
     return &document_.tabs[activeTabIndex_];
+}
+
+std::optional<core::ItemLocation> LauncherWindow::itemLocationForDisplayedIndex(
+    const std::size_t index) const noexcept
+{
+    if (isSearchFiltering()) {
+        if (index >= searchResults_.size()) {
+            return std::nullopt;
+        }
+        return core::ItemLocation{
+            searchResults_[index].tabIndex,
+            searchResults_[index].itemIndex,
+        };
+    }
+    const auto* tab = activeTab();
+    if (!tab || index >= tab->items.size()) {
+        return std::nullopt;
+    }
+    return core::ItemLocation{activeTabIndex_, index};
 }
 
 std::optional<LauncherWindow::DisplayedItem> LauncherWindow::displayedItem(
