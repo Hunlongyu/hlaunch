@@ -4,8 +4,8 @@
 
 | ID | 需求 | 规范 | 最低证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| PROD-GRID-001 | Grid 优先、Tab 分类并支持跨 Tab 搜索 | `product-scope.md`、`launcher-ui.md` | UI 集成 + 键盘运行验证 | 已验证（2026-08-26：`items.json` Tab/Grid 绑定、鼠标/键盘分类切换与启动、空状态、底部附属搜索窗、DIP 命中、可见焦点、滚轮逐行浏览与位置指示，以及直接输入/Ctrl+F、Unicode 跨 Tab 搜索、稳定排序、退格/粘贴、方向/Home/End、PageUp/PageDown、Enter 和两阶段 Esc 已实现；窗口级集成测试与 30 条目 Debug 便携运行验证通过） |
-| PROD-ITEM-001 | 添加、编辑、删除和跨 Tab 移动条目并安全持久化 | `launcher-ui.md`、`data-and-config.md` | Launcher 窗口集成 + Core 变更测试 + 后台存储测试 | 已验证（2026-08-26：点击/`Insert` 添加、`F2`/右键编辑、`Delete`/右键删除已接入；Debug Launcher 窗口测试覆盖全部编辑字段、逻辑参数拆分、跨 Tab 移动、删除取消与确认、相邻焦点、稳定 UUID 和搜索索引刷新，Core/存储测试覆盖删除顺序、使用统计保留、首次默认分类、后台快照合并和退出刷新） |
+| PROD-GRID-001 | Grid 优先、Tab 分类并支持跨 Tab 搜索 | `product-scope.md`、`launcher-ui.md` | UI 集成 + 键盘运行验证 | 已验证（2026-08-26：`items.json` Tab/Grid 绑定、鼠标/键盘分类切换与启动、同 Tab 拖拽重排、跨 Tab 末尾移动、目标高亮、空状态、底部附属搜索窗、DIP 命中、可见焦点、滚轮逐行浏览与位置指示，以及直接输入/Ctrl+F、Unicode 跨 Tab 搜索、稳定排序、退格/粘贴、方向/Home/End、PageUp/PageDown、Enter 和两阶段 Esc 已实现；Core 与窗口级拖拽集成测试、30 条目 Debug 便携运行验证通过） |
+| PROD-ITEM-001 | 添加、编辑、删除和跨 Tab 移动条目并安全持久化 | `launcher-ui.md`、`data-and-config.md` | Launcher 窗口集成 + Core 变更测试 + 后台存储测试 | 已验证（2026-08-26：点击/`Insert` 添加、`F2`/右键编辑、`Delete`/右键删除及鼠标重排已接入；Debug Launcher 窗口测试覆盖全部编辑字段、逻辑参数拆分、同 Tab 最终位置重排、跨 Tab 移动、删除取消与确认、相邻焦点、稳定 UUID 和搜索索引刷新，Core/存储测试覆盖无效移动原子性、删除顺序、使用统计保留、首次默认分类、后台快照合并和退出刷新） |
 | PROD-DROP-001 | 从文件系统和浏览器拖入添加条目，保留批量顺序并处理完全重复 | `launcher-ui.md`、`windows-integration.md` | OLE 数据对象集成 + 窗口集成 + Explorer/浏览器运行验证 | 部分验证（2026-08-26：`IDropTarget` 注册/撤销、`CF_HDROP`/URL 提取、后台类型解析、目标 Tab、批量顺序、完全重复默认跳过和后台持久化已实现；Core、OLE 数据对象、解析器与真实窗口注册测试通过，Explorer/浏览器鼠标矩阵待人工验证） |
 | UI-EFFECT-001 | 无边框窗口支持系统材质、表面 alpha 与整体透明度，并可安全降级 | `launcher-ui.md`、`themes.md` | 参数单元测试 + 各材质 Windows 运行截图 + 高对比度验证 | 部分验证（2026-08-26：参数测试、四种材质窗口创建与 DWM 属性读取通过；材质截图和高对比度未验证） |
 | UI-DRAG-001 | 除搜索、Grid、Tab 和关闭按钮外的客户区可拖动无边框窗口 | `launcher-ui.md` | 命中测试单元测试 + Windows 拖拽运行验证 | 部分验证（2026-08-26：DIP 单元测试与真实窗口 7 点 `WM_NCHITTEST` 探测通过；实际鼠标移动结果待人工确认） |

@@ -80,6 +80,10 @@ private:
     void showEditEditor(std::size_t absoluteIndex);
     void showItemContextMenu(std::size_t absoluteIndex, POINT screenPoint);
     void deleteItem(std::size_t absoluteIndex);
+    void beginItemDrag(std::size_t absoluteIndex, POINT clientPoint);
+    void updateItemDrag(POINT clientPoint);
+    void finishItemDrag(POINT clientPoint);
+    void cancelItemDrag() noexcept;
     void submitDroppedSources(
         std::vector<platform::windows::DroppedSource> sources,
         POINTL screenPoint);
@@ -92,6 +96,14 @@ private:
     struct DisplayedItem {
         const core::LaunchItem* item{};
         const core::Tab* tab{};
+    };
+    struct InternalDropTarget {
+        std::size_t tabIndex{};
+        std::size_t itemIndex{};
+        bool tabTarget{};
+        std::optional<std::size_t> displayedTileIndex{};
+
+        bool operator==(const InternalDropTarget&) const = default;
     };
     [[nodiscard]] std::optional<core::ItemLocation>
     itemLocationForDisplayedIndex(std::size_t index) const noexcept;
@@ -121,6 +133,11 @@ private:
     std::size_t pageOffset_{};
     int wheelDeltaRemainder_{};
     bool windowFocused_{};
+    std::optional<core::ItemLocation> itemDragSource_{};
+    std::optional<InternalDropTarget> itemDropTarget_{};
+    std::optional<std::size_t> pressedItemIndex_{};
+    POINT itemDragStart_{};
+    bool itemDragActive_{};
     LaunchHandler launchHandler_{};
     DocumentChangedHandler documentChangedHandler_{};
     DeleteConfirmationHandler deleteConfirmationHandler_{};

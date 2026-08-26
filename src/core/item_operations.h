@@ -21,6 +21,7 @@ enum class ItemMutationError : std::uint8_t
 {
     InvalidTab,
     InvalidItem,
+    InvalidTargetIndex,
     DuplicateId,
 };
 
@@ -43,6 +44,10 @@ addItem(ItemsDocument &document, std::size_t targetTabIndex, LaunchItem item);
 
 [[nodiscard]] std::expected<LaunchItem, ItemMutationError>
 removeItem(ItemsDocument &document, ItemLocation source);
+
+[[nodiscard]] std::expected<ItemLocation, ItemMutationError>
+moveItem(ItemsDocument &document, ItemLocation source, std::size_t targetTabIndex,
+         std::size_t targetItemIndex);
 
 [[nodiscard]] std::expected<BatchItemMutationResult, ItemMutationError>
 addImportedItems(ItemsDocument &document, std::size_t targetTabIndex,

@@ -146,3 +146,78 @@ TEST_CASE("PROD-ITEM-001 remove returns the item and preserves sibling order")
     REQUIRE_FALSE(invalidItem.has_value());
     CHECK(invalidItem.error() == hlaunch::core::ItemMutationError::InvalidItem);
 }
+
+TEST_CASE("PROD-GRID-001 move reorders items using the final target index")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "One",
+            .items = {
+                {.id = "first", .name = "First"},
+                {.id = "second", .name = "Second"},
+                {.id = "third", .name = "Third"},
+            },
+        }},
+    };
+
+    const auto moved = hlaunch::core::moveItem(document, {0, 0}, 0, 2);
+
+    REQUIRE(moved.has_value());
+    CHECK(*moved == hlaunch::core::ItemLocation{0, 2});
+    REQUIRE(document.tabs[0].items.size() == 3);
+    CHECK(document.tabs[0].items[0].id == "second");
+    CHECK(document.tabs[0].items[1].id == "third");
+    CHECK(document.tabs[0].items[2].id == "first");
+}
+
+TEST_CASE("PROD-GRID-001 move transfers an item to an exact position in another tab")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {
+            hlaunch::core::Tab{
+                .id = "11111111-1111-4111-8111-111111111111",
+                .name = "One",
+                .items = {
+                    {.id = "first", .name = "First"},
+                    {.id = "second", .name = "Second"},
+                },
+            },
+            hlaunch::core::Tab{
+                .id = "22222222-2222-4222-8222-222222222222",
+                .name = "Two",
+                .items = {
+                    {.id = "third", .name = "Third"},
+                },
+            },
+        },
+    };
+
+    const auto moved = hlaunch::core::moveItem(document, {0, 1}, 1, 0);
+
+    REQUIRE(moved.has_value());
+    CHECK(*moved == hlaunch::core::ItemLocation{1, 0});
+    REQUIRE(document.tabs[0].items.size() == 1);
+    CHECK(document.tabs[0].items[0].id == "first");
+    REQUIRE(document.tabs[1].items.size() == 2);
+    CHECK(document.tabs[1].items[0].id == "second");
+    CHECK(document.tabs[1].items[1].id == "third");
+}
+
+TEST_CASE("PROD-GRID-001 invalid move leaves the document unchanged")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "One",
+            .items = {{.id = "first", .name = "First"}},
+        }},
+    };
+
+    const auto invalidTarget = hlaunch::core::moveItem(document, {0, 0}, 0, 1);
+
+    REQUIRE_FALSE(invalidTarget.has_value());
+    CHECK(invalidTarget.error() == hlaunch::core::ItemMutationError::InvalidTargetIndex);
+    REQUIRE(document.tabs[0].items.size() == 1);
+    CHECK(document.tabs[0].items[0].id == "first");
+}

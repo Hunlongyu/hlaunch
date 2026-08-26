@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <new>
 #include <string>
@@ -335,6 +336,7 @@ void LauncherWindow::positionOnScreenEdge(const activation::ScreenEdgeHit& hit)
 
 void LauncherWindow::hide()
 {
+    cancelItemDrag();
     searchVisible_ = false;
     searchResults_.clear();
     pageOffset_ = 0;
@@ -451,6 +453,38 @@ LRESULT LauncherWindow::handleMessage(
     case WM_MOUSEWHEEL:
         handleMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
         return 0;
+    case WM_LBUTTONDOWN: {
+        if (isSearchFiltering()) {
+            return 0;
+        }
+        RECT client{};
+        GetClientRect(window_, &client);
+        const float xDip = static_cast<float>(GET_X_LPARAM(lParam)) * 96.0F
+            / static_cast<float>(dpi_);
+        const float yDip = static_cast<float>(GET_Y_LPARAM(lParam)) * 96.0F
+            / static_cast<float>(dpi_);
+        const auto layout = calculateLauncherLayout({
+            .clientWidthDip = static_cast<float>(client.right) * 96.0F
+                / static_cast<float>(dpi_),
+            .clientHeightDip = static_cast<float>(client.bottom) * 96.0F
+                / static_cast<float>(dpi_),
+            .itemCount = displayedTileCount(),
+        });
+        if (const auto itemIndex = hitTestLauncherItem(layout, xDip, yDip);
+            itemIndex && *itemIndex < visibleItemCount()) {
+            beginItemDrag(
+                pageOffset_ + *itemIndex,
+                POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
+            SetFocus(window_);
+        }
+        return 0;
+    }
+    case WM_MOUSEMOVE:
+        if (itemDragSource_ && (wParam & MK_LBUTTON) != 0) {
+            updateItemDrag(POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
+            return 0;
+        }
+        return DefWindowProcW(window_, message, wParam, lParam);
     case WM_NCHITTEST: {
         POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         ScreenToClient(window_, &point);
@@ -472,6 +506,20 @@ LRESULT LauncherWindow::handleMessage(
         return isLauncherDragRegion(layout, xDip, yDip) ? HTCAPTION : HTCLIENT;
     }
     case WM_LBUTTONUP: {
+        std::optional<std::size_t> requiredClickIndex{};
+        const POINT clientPoint{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        if (itemDragSource_) {
+            const bool wasDragging = itemDragActive_;
+            requiredClickIndex = pressedItemIndex_;
+            if (wasDragging) {
+                finishItemDrag(clientPoint);
+                return 0;
+            }
+            cancelItemDrag();
+            if (!requiredClickIndex) {
+                return 0;
+            }
+        }
         RECT client{};
         GetClientRect(window_, &client);
         const float xDip = static_cast<float>(GET_X_LPARAM(lParam)) * 96.0F
@@ -506,6 +554,9 @@ LRESULT LauncherWindow::handleMessage(
         }
         if (const auto itemIndex = hitTestLauncherItem(layout, xDip, yDip)) {
             const auto absoluteIndex = pageOffset_ + *itemIndex;
+            if (requiredClickIndex && absoluteIndex != *requiredClickIndex) {
+                return 0;
+            }
             if (const auto displayed = displayedItem(absoluteIndex);
                 displayed && displayed->item && launchHandler_) {
                 focusedItemIndex_ = absoluteIndex;
@@ -519,6 +570,11 @@ LRESULT LauncherWindow::handleMessage(
         }
         return 0;
     }
+    case WM_CAPTURECHANGED:
+        if (itemDragSource_ && reinterpret_cast<HWND>(lParam) != window_) { // NOLINT(performance-no-int-to-ptr): WM_CAPTURECHANGED defines LPARAM as HWND.
+            cancelItemDrag();
+        }
+        return 0;
     case WM_RBUTTONUP: {
         RECT client{};
         GetClientRect(window_, &client);
@@ -582,10 +638,12 @@ LRESULT LauncherWindow::handleMessage(
         return 0;
     }
     case WM_CLOSE:
+        cancelItemDrag();
         shutdownDropServices();
         DestroyWindow(window_);
         return 0;
     case WM_DESTROY:
+        cancelItemDrag();
         shutdownDropServices();
         window_ = nullptr;
         PostQuitMessage(0);
@@ -855,6 +913,20 @@ void LauncherWindow::render()
                     D2D1::RectF(tabRect.left + 10.0F, tabRect.bottom - 2.0F, tabRect.right - 10.0F, tabRect.bottom),
                     accentBrush_.get());
             }
+            if (itemDragActive_ && itemDropTarget_
+                && itemDropTarget_->tabTarget && itemDropTarget_->tabIndex == index) {
+                renderTarget_->DrawRoundedRectangle(
+                    D2D1::RoundedRect(
+                        D2D1::RectF(
+                            tabRect.left + 3.0F,
+                            tabRect.top + 3.0F,
+                            tabRect.right - 3.0F,
+                            tabRect.bottom - 3.0F),
+                        6.0F,
+                        6.0F),
+                    accentBrush_.get(),
+                    2.0F);
+            }
         }
     }
     if (!filtering && tabCount == 0) {
@@ -887,6 +959,21 @@ void LauncherWindow::render()
             D2D1::RoundedRect(tile, cornerRadius, cornerRadius),
             borderBrush_.get(),
             1.0F);
+        if (itemDragActive_ && itemDropTarget_ && !itemDropTarget_->tabTarget
+            && itemDropTarget_->tabIndex == activeTabIndex_
+            && itemDropTarget_->displayedTileIndex == index) {
+            renderTarget_->DrawRoundedRectangle(
+                D2D1::RoundedRect(
+                    D2D1::RectF(
+                        tile.left + 1.0F,
+                        tile.top + 1.0F,
+                        tile.right - 1.0F,
+                        tile.bottom - 1.0F),
+                    cornerRadius - 1.0F,
+                    cornerRadius - 1.0F),
+                accentBrush_.get(),
+                3.0F);
+        }
         const bool keyboardFocused = windowFocused_ || GetFocus() == searchWindow_.handle();
         if (!addTile && keyboardFocused && absoluteIndex == focusedItemIndex_) {
             const auto focusBounds = D2D1::RectF(
@@ -1363,6 +1450,129 @@ void LauncherWindow::deleteItem(const std::size_t absoluteIndex)
         documentChangedHandler_(document_);
     }
     InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::beginItemDrag(const std::size_t absoluteIndex, const POINT clientPoint)
+{
+    const auto source = itemLocationForDisplayedIndex(absoluteIndex);
+    if (!source || isSearchFiltering()) {
+        return;
+    }
+    itemDragSource_ = source;
+    itemDropTarget_.reset();
+    pressedItemIndex_ = absoluteIndex;
+    itemDragStart_ = clientPoint;
+    itemDragActive_ = false;
+    SetCapture(window_);
+}
+
+void LauncherWindow::updateItemDrag(const POINT clientPoint)
+{
+    if (!itemDragSource_) {
+        return;
+    }
+    if (!itemDragActive_) {
+        const auto horizontalDistance = std::abs(clientPoint.x - itemDragStart_.x);
+        const auto verticalDistance = std::abs(clientPoint.y - itemDragStart_.y);
+        if (horizontalDistance < GetSystemMetrics(SM_CXDRAG)
+            && verticalDistance < GetSystemMetrics(SM_CYDRAG)) {
+            return;
+        }
+        itemDragActive_ = true;
+    }
+
+    RECT client{};
+    GetClientRect(window_, &client);
+    const float xDip = static_cast<float>(clientPoint.x) * 96.0F
+        / static_cast<float>(dpi_);
+    const float yDip = static_cast<float>(clientPoint.y) * 96.0F
+        / static_cast<float>(dpi_);
+    const auto layout = calculateLauncherLayout({
+        .clientWidthDip = static_cast<float>(client.right) * 96.0F
+            / static_cast<float>(dpi_),
+        .clientHeightDip = static_cast<float>(client.bottom) * 96.0F
+            / static_cast<float>(dpi_),
+        .itemCount = displayedTileCount(),
+    });
+
+    std::optional<InternalDropTarget> target{};
+    if (const auto tabIndex = hitTestLauncherTab(
+            layout,
+            document_.tabs.size(),
+            xDip,
+            yDip)) {
+        const auto targetSize = document_.tabs[*tabIndex].items.size();
+        target = InternalDropTarget{
+            .tabIndex = *tabIndex,
+            .itemIndex = *tabIndex == itemDragSource_->tabIndex
+                ? targetSize - 1U
+                : targetSize,
+            .tabTarget = true,
+        };
+    }
+    else if (const auto displayedIndex = hitTestLauncherItem(layout, xDip, yDip)) {
+        const auto itemCount = document_.tabs[activeTabIndex_].items.size();
+        const auto requestedIndex = pageOffset_ + *displayedIndex;
+        target = InternalDropTarget{
+            .tabIndex = activeTabIndex_,
+            .itemIndex = std::min(requestedIndex, itemCount - 1U),
+            .tabTarget = false,
+            .displayedTileIndex = *displayedIndex,
+        };
+    }
+
+    if (target != itemDropTarget_) {
+        itemDropTarget_ = target;
+        InvalidateRect(window_, nullptr, FALSE);
+    }
+}
+
+void LauncherWindow::finishItemDrag(const POINT clientPoint)
+{
+    updateItemDrag(clientPoint);
+    const auto source = itemDragSource_;
+    const auto target = itemDropTarget_;
+    cancelItemDrag();
+    if (!source || !target
+        || (source->tabIndex == target->tabIndex && source->itemIndex == target->itemIndex)) {
+        return;
+    }
+
+    auto updatedDocument = document_;
+    const auto location = core::moveItem(
+        updatedDocument,
+        *source,
+        target->tabIndex,
+        target->itemIndex);
+    if (!location || !core::validateItemsDocument(updatedDocument).empty()) {
+        return;
+    }
+
+    document_ = std::move(updatedDocument);
+    activeTabIndex_ = location->tabIndex;
+    focusedItemIndex_ = location->itemIndex;
+    pageOffset_ = 0;
+    wheelDeltaRemainder_ = 0;
+    rebuildSearchIndex();
+    ensureFocusedItemVisible();
+    if (documentChangedHandler_) {
+        documentChangedHandler_(document_);
+    }
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::cancelItemDrag() noexcept
+{
+    itemDragSource_.reset();
+    itemDropTarget_.reset();
+    pressedItemIndex_.reset();
+    itemDragActive_ = false;
+    if (GetCapture() == window_) {
+        ReleaseCapture();
+    }
+    if (window_) {
+        InvalidateRect(window_, nullptr, FALSE);
+    }
 }
 
 void LauncherWindow::submitDroppedSources(

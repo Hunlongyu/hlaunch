@@ -100,6 +100,43 @@ removeItem(ItemsDocument &document, const ItemLocation source)
     return removed;
 }
 
+std::expected<ItemLocation, ItemMutationError>
+moveItem(ItemsDocument &document, const ItemLocation source,
+         const std::size_t targetTabIndex, const std::size_t targetItemIndex)
+{
+    if (source.tabIndex >= document.tabs.size() || targetTabIndex >= document.tabs.size())
+    {
+        return std::unexpected(ItemMutationError::InvalidTab);
+    }
+
+    auto &sourceItems = document.tabs[source.tabIndex].items;
+    if (source.itemIndex >= sourceItems.size())
+    {
+        return std::unexpected(ItemMutationError::InvalidItem);
+    }
+
+    const auto targetSize = document.tabs[targetTabIndex].items.size();
+    const auto maximumTargetIndex = source.tabIndex == targetTabIndex
+        ? targetSize - 1U
+        : targetSize;
+    if (targetItemIndex > maximumTargetIndex)
+    {
+        return std::unexpected(ItemMutationError::InvalidTargetIndex);
+    }
+    if (source.tabIndex == targetTabIndex && source.itemIndex == targetItemIndex)
+    {
+        return source;
+    }
+
+    LaunchItem moved = std::move(sourceItems[source.itemIndex]);
+    sourceItems.erase(sourceItems.begin() + static_cast<std::ptrdiff_t>(source.itemIndex));
+    auto &targetItems = document.tabs[targetTabIndex].items;
+    targetItems.insert(
+        targetItems.begin() + static_cast<std::ptrdiff_t>(targetItemIndex),
+        std::move(moved));
+    return ItemLocation{targetTabIndex, targetItemIndex};
+}
+
 std::expected<BatchItemMutationResult, ItemMutationError>
 addImportedItems(ItemsDocument &document, const std::size_t targetTabIndex,
                  std::vector<LaunchItem> items, const bool allowExactDuplicates)

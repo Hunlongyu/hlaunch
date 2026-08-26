@@ -49,6 +49,31 @@ void clearPendingQuitMessages()
     }
 }
 
+POINT centerInPixels(const HWND window, const hlaunch::ui::RectDip& rectangle)
+{
+    const auto dpi = GetDpiForWindow(window);
+    return POINT{
+        static_cast<LONG>((rectangle.x + (rectangle.width / 2.0F))
+            * static_cast<float>(dpi) / 96.0F),
+        static_cast<LONG>((rectangle.y + (rectangle.height / 2.0F))
+            * static_cast<float>(dpi) / 96.0F),
+    };
+}
+
+hlaunch::ui::LauncherLayout launcherLayoutFor(const HWND window, const std::size_t itemCount)
+{
+    RECT client{};
+    GetClientRect(window, &client);
+    const auto dpi = GetDpiForWindow(window);
+    return hlaunch::ui::calculateLauncherLayout({
+        .clientWidthDip = static_cast<float>(client.right) * 96.0F
+            / static_cast<float>(dpi),
+        .clientHeightDip = static_cast<float>(client.bottom) * 96.0F
+            / static_cast<float>(dpi),
+        .itemCount = itemCount,
+    });
+}
+
 } // namespace
 
 TEST_CASE("PLAT-SINGLE-001 command line maps activation commands without payload pointers")
@@ -439,6 +464,88 @@ TEST_CASE("PROD-ITEM-001 Delete removes the focused item and keeps adjacent focu
 
     SendMessageW(launcher.handle(), WM_KEYDOWN, VK_RETURN, 0);
     CHECK(launchedId == secondId);
+}
+
+TEST_CASE("PROD-GRID-001 mouse drag reorders items and moves them to another tab")
+{
+    clearPendingQuitMessages();
+    hlaunch::core::ItemsDocument document{
+        .tabs = {
+            hlaunch::core::Tab{
+                .id = "11111111-1111-4111-8111-111111111111",
+                .name = "Common",
+                .items = {
+                    searchableItem("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "First"),
+                    searchableItem("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", "Second"),
+                    searchableItem("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "Third"),
+                },
+            },
+            hlaunch::core::Tab{
+                .id = "22222222-2222-4222-8222-222222222222",
+                .name = "Work",
+            },
+        },
+    };
+    hlaunch::core::ItemsDocument latest{};
+    std::uint32_t changeCount{};
+    hlaunch::ui::LauncherWindow launcher{};
+    REQUIRE(launcher.create(
+        GetModuleHandleW(nullptr),
+        hlaunch::platform::windows::WindowEffects{
+            .backdrop = hlaunch::platform::windows::WindowBackdrop::Solid,
+        },
+        false,
+        std::move(document),
+        [](const hlaunch::core::LaunchItem&) {},
+        [&](const hlaunch::core::ItemsDocument& changed) {
+            latest = changed;
+            ++changeCount;
+        }));
+
+    const auto layout = launcherLayoutFor(launcher.handle(), 4);
+    const auto first = centerInPixels(launcher.handle(), layout.items[0]);
+    const auto third = centerInPixels(launcher.handle(), layout.items[2]);
+    SendMessageW(launcher.handle(), WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(first.x, first.y));
+    SendMessageW(launcher.handle(), WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(third.x, third.y));
+    SendMessageW(launcher.handle(), WM_LBUTTONUP, 0, MAKELPARAM(third.x, third.y));
+
+    REQUIRE(changeCount == 1U);
+    REQUIRE(latest.tabs[0].items.size() == 3U);
+    CHECK(latest.tabs[0].items[0].name == "Second");
+    CHECK(latest.tabs[0].items[1].name == "Third");
+    CHECK(latest.tabs[0].items[2].name == "First");
+
+    const auto reorderedLayout = launcherLayoutFor(launcher.handle(), 4);
+    const auto movedItem = centerInPixels(launcher.handle(), reorderedLayout.items[2]);
+    const auto secondTab = centerInPixels(
+        launcher.handle(),
+        hlaunch::ui::RectDip{
+            .x = reorderedLayout.tabs.x + (reorderedLayout.tabs.width / 2.0F),
+            .y = reorderedLayout.tabs.y,
+            .width = reorderedLayout.tabs.width / 2.0F,
+            .height = reorderedLayout.tabs.height,
+        });
+    SendMessageW(
+        launcher.handle(),
+        WM_LBUTTONDOWN,
+        MK_LBUTTON,
+        MAKELPARAM(movedItem.x, movedItem.y));
+    SendMessageW(
+        launcher.handle(),
+        WM_MOUSEMOVE,
+        MK_LBUTTON,
+        MAKELPARAM(secondTab.x, secondTab.y));
+    SendMessageW(
+        launcher.handle(),
+        WM_LBUTTONUP,
+        0,
+        MAKELPARAM(secondTab.x, secondTab.y));
+
+    REQUIRE(changeCount == 2U);
+    REQUIRE(latest.tabs[0].items.size() == 2U);
+    REQUIRE(latest.tabs[1].items.size() == 1U);
+    CHECK(latest.tabs[1].items[0].name == "First");
+    CHECK(latest.tabs[1].items[0].id == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
 }
 
 TEST_CASE("PROD-GRID-001 launcher layout always retains at least one column")
