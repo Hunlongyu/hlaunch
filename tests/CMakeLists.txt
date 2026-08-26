@@ -59,3 +59,16 @@ target_link_libraries(
 )
 
 add_test(NAME ACT-HOTKEY-001.registration COMMAND hlaunch_global_hotkey_tests)
+
+add_executable(hlaunch_screen_edge_tests screen_edge_tests.cpp)
+
+target_link_libraries(
+    hlaunch_screen_edge_tests
+    PRIVATE
+        HLaunch::Activation
+        HLaunch::ProjectOptions
+        HLaunch::UI
+        doctest::doctest
+)
+
+add_test(NAME ACT-EDGE-001.state-and-layout COMMAND hlaunch_screen_edge_tests)

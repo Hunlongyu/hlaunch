@@ -100,6 +100,12 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
     const auto& hotkeyConfig = config->value->activation.hotkey;
     const auto hotkeyResult = hotkey_.apply(activationWindow_, hotkeyConfig);
     const bool hotkeyAvailable = hotkeyResult.has_value() && hotkey_.isRegistered();
+    const bool screenEdgeStarted = screenEdge_.start(
+        {
+            .activationWindow = activationWindow_,
+            .launcherWindow = launcher_.handle(),
+        },
+        config->value->activation.screenEdge);
 
     if (options.activation) {
         execute(*options.activation);
@@ -111,6 +117,13 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
 
     if (!hotkeyResult) {
         showHotkeyError(launcher_.handle(), hotkeyResult.error());
+    }
+    if (!screenEdgeStarted) {
+        MessageBoxW(
+            launcher_.handle(),
+            L"无法启动屏幕边缘唤起。该功能已保持关闭，请检查显示器状态后重新启动 HLaunch。",
+            L"HLaunch 屏幕边缘",
+            MB_OK | MB_ICONWARNING);
     }
 
     MSG message{};
@@ -184,6 +197,16 @@ LRESULT Application::handleActivationMessage(
     if (message == WM_HOTKEY && hotkey_.handlesMessage(wParam)) {
         execute(platform::windows::ActivationCommand::Toggle);
         return 0;
+    }
+    if (message == platform::windows::screenEdgeActivationMessage) {
+        if (const auto activation = screenEdge_.takePendingActivation()) {
+            launcher_.showAtScreenEdge(*activation);
+        }
+        return 0;
+    }
+    if ((message == WM_DISPLAYCHANGE || message == WM_SETTINGCHANGE)
+        && screenEdge_.isRunning()) {
+        screenEdge_.refreshMonitors();
     }
     return DefWindowProcW(activationWindow_, message, wParam, lParam);
 }

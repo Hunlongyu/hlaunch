@@ -1,5 +1,6 @@
 #pragma once
 
+#include "activation/activation_context.h"
 #include "platform/windows/window_effects.h"
 #include "ui/search_window.h"
 
@@ -25,6 +26,7 @@ public:
         const platform::windows::WindowEffects& effects,
         bool showSearch);
     void show();
+    void showAtScreenEdge(const activation::ScreenEdgeHit& hit);
     void hide();
     void toggle();
 
@@ -39,6 +41,7 @@ private:
     [[nodiscard]] bool createDeviceResources();
     void discardDeviceResources() noexcept;
     void positionOnCursorMonitor();
+    void positionOnScreenEdge(const activation::ScreenEdgeHit& hit);
     void positionSearchWindow();
     void render();
     void drawText(

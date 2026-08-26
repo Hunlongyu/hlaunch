@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/data_model.h"
+
 #include <cstddef>
 #include <vector>
 
@@ -62,6 +64,15 @@ struct RectPixels {
     int bottom{};
 };
 
+struct ScreenEdgePlacementRequest {
+    RectPixels workArea{};
+    int windowWidth{};
+    int windowHeight{};
+    int cursorX{};
+    int cursorY{};
+    core::ScreenEdgeZone zone{core::ScreenEdgeZone::Left};
+};
+
 [[nodiscard]] LauncherLayout calculateLauncherLayout(
     const LauncherLayoutRequest& request,
     const LauncherMetrics& metrics = {});
@@ -79,5 +90,8 @@ struct RectPixels {
     const RectPixels& workArea,
     int windowWidth,
     int windowHeight) noexcept;
+
+[[nodiscard]] RectPixels calculateScreenEdgeWindowRectangle(
+    const ScreenEdgePlacementRequest& request) noexcept;
 
 } // namespace hlaunch::ui

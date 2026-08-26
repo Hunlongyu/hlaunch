@@ -133,6 +133,21 @@ void LauncherWindow::show()
     InvalidateRect(window_, nullptr, FALSE);
 }
 
+void LauncherWindow::showAtScreenEdge(const activation::ScreenEdgeHit& hit)
+{
+    positionOnScreenEdge(hit);
+    ShowWindow(window_, SW_SHOWNORMAL);
+    if (searchVisible_) {
+        positionSearchWindow();
+        searchWindow_.show();
+    }
+    else {
+        searchWindow_.hide();
+    }
+    SetForegroundWindow(window_);
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
 void LauncherWindow::positionOnCursorMonitor()
 {
     POINT cursor{};
@@ -164,6 +179,42 @@ void LauncherWindow::positionOnCursorMonitor()
         RectPixels{info.rcWork.left, info.rcWork.top, info.rcWork.right, info.rcWork.bottom},
         desiredWidth,
         desiredHeight);
+    SetWindowPos(
+        window_,
+        nullptr,
+        placement.left,
+        placement.top,
+        placement.right - placement.left,
+        placement.bottom - placement.top,
+        SWP_NOACTIVATE | SWP_NOZORDER);
+}
+
+void LauncherWindow::positionOnScreenEdge(const activation::ScreenEdgeHit& hit)
+{
+    SetWindowPos(
+        window_,
+        nullptr,
+        hit.workArea.left,
+        hit.workArea.top,
+        0,
+        0,
+        SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
+
+    const int desiredWidth = MulDiv(launcherWidthDip, static_cast<int>(dpi_), 96);
+    const int desiredHeight = MulDiv(launcherHeightDip, static_cast<int>(dpi_), 96);
+    const auto placement = calculateScreenEdgeWindowRectangle({
+        .workArea = RectPixels{
+            hit.workArea.left,
+            hit.workArea.top,
+            hit.workArea.right,
+            hit.workArea.bottom,
+        },
+        .windowWidth = desiredWidth,
+        .windowHeight = desiredHeight,
+        .cursorX = hit.cursor.x,
+        .cursorY = hit.cursor.y,
+        .zone = hit.zone,
+    });
     SetWindowPos(
         window_,
         nullptr,

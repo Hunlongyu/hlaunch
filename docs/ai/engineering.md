@@ -62,4 +62,4 @@ V1 不使用 Qt、WinUI 3、Windows App SDK、WTL、ATL、WRL、Boost、TBB、li
 
 ## 系统库
 
-预计链接 user32、shell32、ole32、advapi32、d2d1、dwrite、windowscodecs、dwmapi、shlwapi 和 comctl32。只有实际使用时才加入库；P1 在线更新和崩溃转储分别需要 winhttp 与 dbghelp。
+预计链接 user32、shell32、ole32、advapi32、d2d1、dwrite、windowscodecs、dwmapi、shcore、shlwapi 和 comctl32。只有实际使用时才加入库；`shcore` 当前用于按显示器取得有效 DPI。P1 在线更新和崩溃转储分别需要 winhttp 与 dbghelp。

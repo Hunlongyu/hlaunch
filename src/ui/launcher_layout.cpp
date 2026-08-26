@@ -120,4 +120,56 @@ RectPixels calculateCenteredWindowRectangle(
     return RectPixels{left, top, left + constrainedWidth, top + constrainedHeight};
 }
 
+RectPixels calculateScreenEdgeWindowRectangle(
+    const ScreenEdgePlacementRequest& request) noexcept
+{
+    const auto& workArea = request.workArea;
+    const int availableWidth = std::max(0, workArea.right - workArea.left);
+    const int availableHeight = std::max(0, workArea.bottom - workArea.top);
+    const int width = std::clamp(request.windowWidth, 0, availableWidth);
+    const int height = std::clamp(request.windowHeight, 0, availableHeight);
+    const int centeredX = std::clamp(
+        request.cursorX - (width / 2),
+        workArea.left,
+        workArea.right - width);
+    const int centeredY = std::clamp(
+        request.cursorY - (height / 2),
+        workArea.top,
+        workArea.bottom - height);
+
+    int left = centeredX;
+    int top = centeredY;
+    switch (request.zone) {
+    case core::ScreenEdgeZone::Left:
+        left = workArea.left;
+        break;
+    case core::ScreenEdgeZone::Right:
+        left = workArea.right - width;
+        break;
+    case core::ScreenEdgeZone::Top:
+        top = workArea.top;
+        break;
+    case core::ScreenEdgeZone::Bottom:
+        top = workArea.bottom - height;
+        break;
+    case core::ScreenEdgeZone::TopLeft:
+        left = workArea.left;
+        top = workArea.top;
+        break;
+    case core::ScreenEdgeZone::TopRight:
+        left = workArea.right - width;
+        top = workArea.top;
+        break;
+    case core::ScreenEdgeZone::BottomLeft:
+        left = workArea.left;
+        top = workArea.bottom - height;
+        break;
+    case core::ScreenEdgeZone::BottomRight:
+        left = workArea.right - width;
+        top = workArea.bottom - height;
+        break;
+    }
+    return RectPixels{left, top, left + width, top + height};
+}
+
 } // namespace hlaunch::ui

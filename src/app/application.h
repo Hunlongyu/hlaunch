@@ -2,6 +2,7 @@
 
 #include "app/command_line.h"
 #include "platform/windows/global_hotkey.h"
+#include "platform/windows/screen_edge_activation.h"
 #include "platform/windows/single_instance.h"
 #include "ui/launcher_window.h"
 
@@ -29,6 +30,7 @@ private:
     ui::LauncherWindow launcher_{};
     HWND activationWindow_{};
     platform::windows::GlobalHotkey hotkey_{};
+    platform::windows::ScreenEdgeActivation screenEdge_{};
 };
 
 } // namespace hlaunch::app

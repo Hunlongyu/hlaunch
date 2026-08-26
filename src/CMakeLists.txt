@@ -69,11 +69,35 @@ target_link_libraries(
 )
 
 add_library(
+    hlaunch_activation
+    STATIC
+        activation/activation_context.h
+        activation/screen_edge_state.cpp
+        activation/screen_edge_state.h
+)
+add_library(HLaunch::Activation ALIAS hlaunch_activation)
+
+target_include_directories(
+    hlaunch_activation
+    PUBLIC
+        "${PROJECT_SOURCE_DIR}/src"
+)
+target_link_libraries(
+    hlaunch_activation
+    PUBLIC
+        HLaunch::Core
+    PRIVATE
+        HLaunch::ProjectOptions
+)
+
+add_library(
     hlaunch_platform_windows
     STATIC
         platform/windows/activation_command.h
         platform/windows/global_hotkey.cpp
         platform/windows/global_hotkey.h
+        platform/windows/screen_edge_activation.cpp
+        platform/windows/screen_edge_activation.h
         platform/windows/single_instance.cpp
         platform/windows/single_instance.h
         platform/windows/window_effects.cpp
@@ -89,11 +113,13 @@ target_include_directories(
 target_link_libraries(
     hlaunch_platform_windows
     PUBLIC
+        HLaunch::Activation
         HLaunch::Dependencies
     PRIVATE
         HLaunch::ProjectOptions
         advapi32
         dwmapi
+        shcore
         user32
 )
 
@@ -117,6 +143,7 @@ target_include_directories(
 target_link_libraries(
     hlaunch_ui
     PUBLIC
+        HLaunch::Activation
         HLaunch::Core
         HLaunch::PlatformWindows
     PRIVATE
