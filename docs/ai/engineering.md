@@ -26,6 +26,7 @@
 - 用 `CMAKE_MSVC_RUNTIME_LIBRARY` 设置 Release `/MT`、Debug `/MTd`。
 - 构建时先通过 `vswhere.exe -prerelease` 或 VS 开发者环境发现 MSVC，不硬编码版本目录。
 - 开发基线使用 Windows SDK `10.0.26100.0` 或更新的兼容 SDK。C++/WinRT 头文件取自所选 Windows SDK，不额外引入 NuGet 包；调用可能缺失于兼容系统的 API 时必须先做运行时能力检测。
+- Ninja 必须正确记录 MSVC `/showIncludes` 头文件依赖。当前 CMake 4.3 在中文 `cl.exe` 下可能把检测前缀误解码为乱码；根构建脚本仅在识别到该已知乱码值时修正为实际中文前缀，英文工具链保持自动检测结果。修正前产生的构建目录必须执行一次完整清理重建，不能继续混用旧对象。
 
 ## Unicode 与错误
 

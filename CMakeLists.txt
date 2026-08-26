@@ -20,6 +20,16 @@ if(MSVC)
         CMAKE_MSVC_RUNTIME_LIBRARY
         "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
+    if(
+        CMAKE_GENERATOR MATCHES "Ninja"
+        AND CMAKE_CXX_CL_SHOWINCLUDES_PREFIX STREQUAL "娉ㄦ剰: 鍖呭惈鏂囦欢:  "
+    )
+        # CMake 4.3 can misdecode localized cl.exe /showIncludes output while
+        # detecting the compiler. Ninja then loses header dependencies and may
+        # link ABI-incompatible stale objects after a class layout change.
+        set(CMAKE_CXX_CL_SHOWINCLUDES_PREFIX "注意: 包含文件:  ")
+        set(CMAKE_CL_SHOWINCLUDES_PREFIX "注意: 包含文件:  ")
+    endif()
 endif()
 
 include(CTest)
