@@ -196,6 +196,11 @@ LRESULT SearchWindow::handleMessage(
     case WM_LBUTTONUP:
         SetFocus(window_);
         return 0;
+    case WM_MOUSEWHEEL:
+        if (const auto owner = GetWindow(window_, GW_OWNER)) {
+            return SendMessageW(owner, message, wParam, lParam);
+        }
+        return 0;
     case WM_KEYDOWN:
         if (wParam == VK_BACK) {
             eraseLastCharacter();

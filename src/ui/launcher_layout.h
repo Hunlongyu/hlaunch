@@ -88,6 +88,11 @@ enum class GridNavigationDirection : std::uint8_t {
     const LauncherLayoutRequest& request,
     const LauncherMetrics& metrics = {});
 
+[[nodiscard]] std::size_t calculateLauncherGridCapacity(
+    float clientWidthDip,
+    float clientHeightDip,
+    const LauncherMetrics& metrics = {});
+
 [[nodiscard]] SearchPopupLayout calculateSearchPopupLayout(
     const LauncherLayout& launcherLayout,
     const SearchPopupMetrics& metrics = {});

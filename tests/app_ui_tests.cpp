@@ -106,6 +106,9 @@ TEST_CASE("PROD-GRID-001 launcher layout remains DIP based and responsive")
     CHECK(regular.items[5].y > regular.items[0].y);
     CHECK(regular.tabs.y > regular.grid.y);
     CHECK(regular.tabs.y + regular.tabs.height == doctest::Approx(640.0F));
+    CHECK(hlaunch::ui::calculateLauncherGridCapacity(280.0F, 520.0F) == 12);
+    CHECK(hlaunch::ui::calculateLauncherGridCapacity(420.0F, 640.0F) == 25);
+    CHECK(hlaunch::ui::calculateLauncherGridCapacity(600.0F, 650.0F) == 42);
 }
 
 TEST_CASE("PROD-GRID-001 detached search aligns without changing the launcher Grid")
@@ -163,6 +166,89 @@ TEST_CASE("PROD-GRID-001 launcher typing searches every tab and Enter invokes th
     SendMessageW(search, WM_KEYDOWN, VK_RETURN, 0);
 
     CHECK(launchedId == "22222222-2222-4222-8222-222222222201");
+}
+
+TEST_CASE("PROD-GRID-001 Grid wheel and PageDown keep the focused item visible")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "Many",
+        }},
+    };
+    for (int index = 0; index < 30; ++index) {
+        document.tabs[0].items.push_back(searchableItem(
+            "item-" + std::to_string(index),
+            "Item " + std::to_string(index)));
+    }
+
+    std::string launchedId{};
+    hlaunch::ui::LauncherWindow launcher{};
+    REQUIRE(launcher.create(
+        GetModuleHandleW(nullptr),
+        hlaunch::platform::windows::WindowEffects{
+            .backdrop = hlaunch::platform::windows::WindowBackdrop::Solid,
+        },
+        false,
+        std::move(document),
+        [&launchedId](const hlaunch::core::LaunchItem& item) {
+            launchedId = item.id;
+        }));
+
+    SendMessageW(
+        launcher.handle(),
+        WM_MOUSEWHEEL,
+        MAKEWPARAM(0, static_cast<WORD>(-WHEEL_DELTA)),
+        0);
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_RETURN, 0);
+    CHECK(launchedId == "item-5");
+
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_PRIOR, 0);
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_NEXT, 0);
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_RETURN, 0);
+    CHECK(launchedId == "item-25");
+}
+
+TEST_CASE("PROD-GRID-001 search results remain available beyond the first page")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "Many",
+        }},
+    };
+    for (int index = 0; index < 30; ++index) {
+        const auto suffix = index < 10
+            ? "0" + std::to_string(index)
+            : std::to_string(index);
+        document.tabs[0].items.push_back(searchableItem(
+            "item-" + suffix,
+            "Match " + suffix));
+    }
+
+    std::string launchedId{};
+    hlaunch::ui::LauncherWindow launcher{};
+    REQUIRE(launcher.create(
+        GetModuleHandleW(nullptr),
+        hlaunch::platform::windows::WindowEffects{
+            .backdrop = hlaunch::platform::windows::WindowBackdrop::Solid,
+        },
+        false,
+        std::move(document),
+        [&launchedId](const hlaunch::core::LaunchItem& item) {
+            launchedId = item.id;
+        }));
+
+    SendMessageW(launcher.handle(), WM_CHAR, L'm', 0);
+    const auto search = FindWindowW(L"HLaunch.SearchWindow.v1", L"HLaunch Search");
+    REQUIRE(search != nullptr);
+    for (const wchar_t character : std::wstring_view{L"atch"}) {
+        SendMessageW(search, WM_CHAR, character, 0);
+    }
+    SendMessageW(search, WM_KEYDOWN, VK_NEXT, 0);
+    SendMessageW(search, WM_KEYDOWN, VK_RETURN, 0);
+
+    CHECK(launchedId == "item-25");
 }
 
 TEST_CASE("PROD-GRID-001 launcher layout always retains at least one column")

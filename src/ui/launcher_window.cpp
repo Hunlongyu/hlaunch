@@ -282,6 +282,9 @@ void LauncherWindow::hide()
 {
     searchVisible_ = false;
     searchResults_.clear();
+    pageOffset_ = 0;
+    wheelDeltaRemainder_ = 0;
+    focusedItemIndex_ = 0;
     searchWindow_.setQuery({});
     searchWindow_.hide();
     ShowWindow(window_, SW_HIDE);
@@ -390,6 +393,9 @@ LRESULT LauncherWindow::handleMessage(
             beginSearch(initialText);
         }
         return 0;
+    case WM_MOUSEWHEEL:
+        handleMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+        return 0;
     case WM_NCHITTEST: {
         POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         ScreenToClient(window_, &point);
@@ -444,9 +450,10 @@ LRESULT LauncherWindow::handleMessage(
             }
         }
         if (const auto itemIndex = hitTestLauncherItem(layout, xDip, yDip)) {
-            if (const auto displayed = displayedItem(*itemIndex);
+            const auto absoluteIndex = pageOffset_ + *itemIndex;
+            if (const auto displayed = displayedItem(absoluteIndex);
                 displayed && displayed->item && launchHandler_) {
-                focusedItemIndex_ = *itemIndex;
+                focusedItemIndex_ = absoluteIndex;
                 SetFocus(window_);
                 InvalidateRect(window_, nullptr, FALSE);
                 launchHandler_(*displayed->item);
@@ -459,6 +466,7 @@ LRESULT LauncherWindow::handleMessage(
             renderTarget_->Resize(D2D1::SizeU(LOWORD(lParam), HIWORD(lParam)));
         }
         if (wParam != SIZE_MINIMIZED) {
+            ensureFocusedItemVisible();
             positionSearchWindow();
         }
         return 0;
@@ -776,7 +784,8 @@ void LauncherWindow::render()
     const auto* tab = activeTab();
     const auto realItemCount = visibleItemCount();
     for (std::size_t index = 0; index < layout.items.size(); ++index) {
-        const auto displayed = displayedItem(index);
+        const auto absoluteIndex = pageOffset_ + index;
+        const auto displayed = displayedItem(absoluteIndex);
         const bool addTile = !filtering && index >= realItemCount;
         const auto name = addTile || !displayed || !displayed->item
             ? std::wstring{L"添加"}
@@ -794,7 +803,7 @@ void LauncherWindow::render()
             borderBrush_.get(),
             1.0F);
         const bool keyboardFocused = windowFocused_ || GetFocus() == searchWindow_.handle();
-        if (!addTile && keyboardFocused && index == focusedItemIndex_) {
+        if (!addTile && keyboardFocused && absoluteIndex == focusedItemIndex_) {
             const auto focusBounds = D2D1::RectF(
                 tile.left + 2.0F,
                 tile.top + 2.0F,
@@ -842,6 +851,37 @@ void LauncherWindow::render()
                 smallFormat_.get(),
                 addTile ? mutedTextBrush_.get() : textBrush_.get());
         }
+    }
+    const auto totalItems = totalItemCount();
+    const auto capacity = pageCapacity();
+    if (capacity > 0 && totalItems > capacity) {
+        const float trackTop = gridBounds.top + 4.0F;
+        const float trackBottom = gridBounds.bottom - 4.0F;
+        const float trackHeight = std::max(0.0F, trackBottom - trackTop);
+        const float thumbHeight = std::max(
+            24.0F,
+            trackHeight * static_cast<float>(capacity) / static_cast<float>(totalItems));
+        const auto maximumOffset = maximumPageOffset();
+        const float progress = maximumOffset > 0
+            ? static_cast<float>(pageOffset_) / static_cast<float>(maximumOffset)
+            : 0.0F;
+        const float thumbTop = trackTop + (trackHeight - thumbHeight) * progress;
+        renderTarget_->FillRoundedRectangle(
+            D2D1::RoundedRect(
+                D2D1::RectF(gridBounds.right - 3.0F, trackTop, gridBounds.right - 1.0F, trackBottom),
+                1.0F,
+                1.0F),
+            borderBrush_.get());
+        renderTarget_->FillRoundedRectangle(
+            D2D1::RoundedRect(
+                D2D1::RectF(
+                    gridBounds.right - 4.0F,
+                    thumbTop,
+                    gridBounds.right,
+                    thumbTop + thumbHeight),
+                2.0F,
+                2.0F),
+            accentBrush_.get());
     }
     if (filtering && searchResults_.empty()) {
         drawText(
@@ -898,6 +938,35 @@ bool LauncherWindow::handleKeyDown(const WPARAM key)
         return true;
     }
 
+    const auto itemCount = totalItemCount();
+    const auto capacity = pageCapacity();
+    if (key == VK_PRIOR || key == VK_NEXT) {
+        if (itemCount > 0 && capacity > 0) {
+            if (key == VK_PRIOR) {
+                focusedItemIndex_ = focusedItemIndex_ > capacity
+                    ? focusedItemIndex_ - capacity
+                    : 0U;
+            }
+            else {
+                focusedItemIndex_ = std::min(
+                    focusedItemIndex_ + capacity,
+                    itemCount - 1U);
+            }
+            ensureFocusedItemVisible();
+            InvalidateRect(window_, nullptr, FALSE);
+        }
+        return true;
+    }
+    if (key == VK_HOME || key == VK_END) {
+        if (const auto visibleCount = visibleItemCount(); visibleCount > 0) {
+            focusedItemIndex_ = key == VK_HOME
+                ? pageOffset_
+                : pageOffset_ + visibleCount - 1U;
+            InvalidateRect(window_, nullptr, FALSE);
+        }
+        return true;
+    }
+
     std::optional<GridNavigationDirection> direction{};
     switch (key) {
     case VK_LEFT:
@@ -911,12 +980,6 @@ bool LauncherWindow::handleKeyDown(const WPARAM key)
         break;
     case VK_DOWN:
         direction = GridNavigationDirection::Down;
-        break;
-    case VK_HOME:
-        direction = GridNavigationDirection::First;
-        break;
-    case VK_END:
-        direction = GridNavigationDirection::Last;
         break;
     default:
         return false;
@@ -935,10 +998,11 @@ bool LauncherWindow::handleKeyDown(const WPARAM key)
     });
     if (const auto itemIndex = navigateGridItem(
             focusedItemIndex_,
-            visibleItemCount(),
+            itemCount,
             layout.columns,
             *direction)) {
         focusedItemIndex_ = *itemIndex;
+        ensureFocusedItemVisible();
         InvalidateRect(window_, nullptr, FALSE);
     }
     return true;
@@ -987,10 +1051,54 @@ void LauncherWindow::updateSearch(const std::wstring_view query)
     searchResults_.clear();
     if (!query.empty()) {
         if (const auto normalizedQuery = platform::windows::normalizeSearchText(query)) {
-            searchResults_ = searchIndex_.search(*normalizedQuery, maximumVisibleItems);
+            searchResults_ = searchIndex_.search(*normalizedQuery, searchIndex_.size());
         }
     }
     focusedItemIndex_ = 0;
+    pageOffset_ = 0;
+    wheelDeltaRemainder_ = 0;
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::handleMouseWheel(const short delta)
+{
+    wheelDeltaRemainder_ += delta;
+    const int steps = wheelDeltaRemainder_ / WHEEL_DELTA;
+    wheelDeltaRemainder_ %= WHEEL_DELTA;
+    const auto capacity = pageCapacity();
+    if (steps == 0 || capacity == 0 || totalItemCount() <= capacity) {
+        return;
+    }
+
+    RECT client{};
+    GetClientRect(window_, &client);
+    const float widthDip = static_cast<float>(client.right - client.left) * 96.0F
+        / static_cast<float>(dpi_);
+    const float heightDip = static_cast<float>(client.bottom - client.top) * 96.0F
+        / static_cast<float>(dpi_);
+    const auto layout = calculateLauncherLayout({
+        .clientWidthDip = widthDip,
+        .clientHeightDip = heightDip,
+        .itemCount = 0,
+    });
+    const auto rowSize = std::min(layout.columns, capacity);
+    const auto rowDistance = static_cast<std::ptrdiff_t>(rowSize)
+        * static_cast<std::ptrdiff_t>(-steps);
+    const auto requestedOffset = static_cast<std::ptrdiff_t>(pageOffset_) + rowDistance;
+    pageOffset_ = static_cast<std::size_t>(std::clamp<std::ptrdiff_t>(
+        requestedOffset,
+        0,
+        static_cast<std::ptrdiff_t>(maximumPageOffset())));
+
+    const auto visibleCount = visibleItemCount();
+    if (visibleCount > 0) {
+        if (focusedItemIndex_ < pageOffset_) {
+            focusedItemIndex_ = pageOffset_;
+        }
+        else if (focusedItemIndex_ >= pageOffset_ + visibleCount) {
+            focusedItemIndex_ = pageOffset_ + visibleCount - 1U;
+        }
+    }
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -1009,6 +1117,8 @@ void LauncherWindow::changeActiveTab(const std::size_t tabIndex)
     }
     activeTabIndex_ = tabIndex;
     focusedItemIndex_ = 0;
+    pageOffset_ = 0;
+    wheelDeltaRemainder_ = 0;
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -1039,7 +1149,7 @@ std::optional<LauncherWindow::DisplayedItem> LauncherWindow::displayedItem(
     }
 
     const auto* tab = activeTab();
-    if (!tab || index >= visibleItemCount()) {
+    if (!tab || index >= tab->items.size()) {
         return std::nullopt;
     }
     return DisplayedItem{&tab->items[index], tab};
@@ -1050,16 +1160,111 @@ bool LauncherWindow::isSearchFiltering() const noexcept
     return searchVisible_ && !searchWindow_.query().empty();
 }
 
-std::size_t LauncherWindow::visibleItemCount() const noexcept
+std::size_t LauncherWindow::totalItemCount() const noexcept
 {
     if (isSearchFiltering()) {
-        return std::min(searchResults_.size(), maximumVisibleItems);
+        return searchResults_.size();
     }
     const auto* tab = activeTab();
-    return tab ? std::min(tab->items.size(), maximumVisibleItems) : 0U;
+    return tab ? tab->items.size() : 0U;
 }
 
-std::size_t LauncherWindow::displayedTileCount() const noexcept
+std::size_t LauncherWindow::pageCapacity() const
+{
+    if (!window_) {
+        return maximumVisibleItems;
+    }
+    RECT client{};
+    if (!GetClientRect(window_, &client)) {
+        return maximumVisibleItems;
+    }
+    const float widthDip = static_cast<float>(client.right - client.left) * 96.0F
+        / static_cast<float>(dpi_);
+    const float heightDip = static_cast<float>(client.bottom - client.top) * 96.0F
+        / static_cast<float>(dpi_);
+    const auto availableCapacity = calculateLauncherGridCapacity(widthDip, heightDip);
+    const auto limitedCapacity = std::min(
+        maximumVisibleItems,
+        availableCapacity);
+    const auto layout = calculateLauncherLayout({
+        .clientWidthDip = widthDip,
+        .clientHeightDip = heightDip,
+        .itemCount = 0,
+    });
+    return limitedCapacity >= layout.columns
+        ? (limitedCapacity / layout.columns) * layout.columns
+        : limitedCapacity;
+}
+
+std::size_t LauncherWindow::maximumPageOffset() const
+{
+    const auto itemCount = totalItemCount();
+    const auto capacity = pageCapacity();
+    if (capacity == 0 || itemCount <= capacity) {
+        return 0;
+    }
+
+    RECT client{};
+    GetClientRect(window_, &client);
+    const float widthDip = static_cast<float>(client.right - client.left) * 96.0F
+        / static_cast<float>(dpi_);
+    const float heightDip = static_cast<float>(client.bottom - client.top) * 96.0F
+        / static_cast<float>(dpi_);
+    const auto layout = calculateLauncherLayout({
+        .clientWidthDip = widthDip,
+        .clientHeightDip = heightDip,
+        .itemCount = 0,
+    });
+    const auto rowSize = std::min(layout.columns, capacity);
+    const auto overflow = itemCount - capacity;
+    return ((overflow + rowSize - 1U) / rowSize) * rowSize;
+}
+
+void LauncherWindow::ensureFocusedItemVisible()
+{
+    const auto itemCount = totalItemCount();
+    const auto capacity = pageCapacity();
+    if (itemCount == 0 || capacity == 0) {
+        focusedItemIndex_ = 0;
+        pageOffset_ = 0;
+        return;
+    }
+    focusedItemIndex_ = std::min(focusedItemIndex_, itemCount - 1U);
+    pageOffset_ = std::min(pageOffset_, maximumPageOffset());
+
+    RECT client{};
+    GetClientRect(window_, &client);
+    const float widthDip = static_cast<float>(client.right - client.left) * 96.0F
+        / static_cast<float>(dpi_);
+    const float heightDip = static_cast<float>(client.bottom - client.top) * 96.0F
+        / static_cast<float>(dpi_);
+    const auto layout = calculateLauncherLayout({
+        .clientWidthDip = widthDip,
+        .clientHeightDip = heightDip,
+        .itemCount = 0,
+    });
+    const auto rowSize = std::min(layout.columns, capacity);
+    if (focusedItemIndex_ < pageOffset_) {
+        pageOffset_ = (focusedItemIndex_ / rowSize) * rowSize;
+    }
+    else if (focusedItemIndex_ >= pageOffset_ + capacity) {
+        const auto requestedOffset = focusedItemIndex_ - capacity + 1U;
+        pageOffset_ = ((requestedOffset + rowSize - 1U) / rowSize) * rowSize;
+    }
+    pageOffset_ = std::min(pageOffset_, maximumPageOffset());
+}
+
+std::size_t LauncherWindow::visibleItemCount() const
+{
+    const auto itemCount = totalItemCount();
+    const auto capacity = pageCapacity();
+    if (capacity == 0 || pageOffset_ >= itemCount) {
+        return 0;
+    }
+    return std::min(capacity, itemCount - pageOffset_);
+}
+
+std::size_t LauncherWindow::displayedTileCount() const
 {
     if (isSearchFiltering()) {
         return visibleItemCount();
@@ -1067,9 +1272,11 @@ std::size_t LauncherWindow::displayedTileCount() const noexcept
     if (!activeTab()) {
         return 0;
     }
+    const auto capacity = pageCapacity();
     const auto itemCount = visibleItemCount();
-    if (itemCount >= maximumVisibleItems) {
-        return maximumVisibleItems;
+    if (capacity == 0 || pageOffset_ + itemCount < totalItemCount()
+        || itemCount >= capacity) {
+        return itemCount;
     }
     return itemCount + 1U;
 }

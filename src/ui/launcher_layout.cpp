@@ -73,6 +73,28 @@ LauncherLayout calculateLauncherLayout(
     return layout;
 }
 
+std::size_t calculateLauncherGridCapacity(
+    const float clientWidthDip,
+    const float clientHeightDip,
+    const LauncherMetrics& metrics)
+{
+    const auto layout = calculateLauncherLayout({
+        .clientWidthDip = clientWidthDip,
+        .clientHeightDip = clientHeightDip,
+        .itemCount = 0,
+    }, metrics);
+    if (metrics.itemWidth <= 0.0F || metrics.itemHeight <= 0.0F
+        || layout.grid.height < metrics.itemHeight) {
+        return 0;
+    }
+    const float rowStride = metrics.itemHeight + metrics.itemGap;
+    const auto rows = rowStride > 0.0F
+        ? 1U + static_cast<std::size_t>(std::floor(
+            (layout.grid.height - metrics.itemHeight) / rowStride))
+        : 1U;
+    return layout.columns * rows;
+}
+
 SearchPopupLayout calculateSearchPopupLayout(
     const LauncherLayout& launcherLayout,
     const SearchPopupMetrics& metrics)

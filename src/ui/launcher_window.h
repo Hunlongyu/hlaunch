@@ -59,6 +59,7 @@ private:
     [[nodiscard]] bool handleSearchKeyDown(WPARAM key);
     void beginSearch(std::wstring_view initialText = {});
     void updateSearch(std::wstring_view query);
+    void handleMouseWheel(short delta);
     void activateFocusedItem();
     void changeActiveTab(std::size_t tabIndex);
     [[nodiscard]] const core::Tab* activeTab() const noexcept;
@@ -68,8 +69,12 @@ private:
     };
     [[nodiscard]] std::optional<DisplayedItem> displayedItem(std::size_t index) const noexcept;
     [[nodiscard]] bool isSearchFiltering() const noexcept;
-    [[nodiscard]] std::size_t visibleItemCount() const noexcept;
-    [[nodiscard]] std::size_t displayedTileCount() const noexcept;
+    [[nodiscard]] std::size_t totalItemCount() const noexcept;
+    [[nodiscard]] std::size_t pageCapacity() const;
+    [[nodiscard]] std::size_t maximumPageOffset() const;
+    void ensureFocusedItemVisible();
+    [[nodiscard]] std::size_t visibleItemCount() const;
+    [[nodiscard]] std::size_t displayedTileCount() const;
     void drawText(
         std::wstring_view text,
         const D2D1_RECT_F& bounds,
@@ -85,6 +90,8 @@ private:
     std::vector<core::SearchResult> searchResults_{};
     std::size_t activeTabIndex_{};
     std::size_t focusedItemIndex_{};
+    std::size_t pageOffset_{};
+    int wheelDeltaRemainder_{};
     bool windowFocused_{};
     LaunchHandler launchHandler_{};
     SearchWindow searchWindow_{};
