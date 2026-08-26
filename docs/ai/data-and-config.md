@@ -5,6 +5,7 @@
 - `config.json`：应用设置、激活策略、窗口和行为偏好。
 - `items.json`：Tab、条目、顺序和使用统计。
 - `theme.json`：单个主题的视觉令牌，见 `themes.md`。
+- `logs/`：诊断日志目录，不属于 JSON schema，也不随配置备份。
 
 V1 设计契约使用 UTF-8 JSON，根对象包含整数 `schemaVersion: 1`。这已经是实现输入，不再称为草稿，但在首个公开版本发布前仍可通过 ADR 变更；当前项目尚无可迁移的已发布用户数据。领域层不依赖 Glaze；JSON 读写和持久化 DTO 只存在于基础设施适配层。
 
@@ -45,6 +46,7 @@ V1 设计契约使用 UTF-8 JSON，根对象包含整数 `schemaVersion: 1`。�
 
 - 标准模式把可变数据放在 `%LOCALAPPDATA%\HLaunch`。
 - EXE 同目录存在 `portable.flag` 时，便携模式把可变数据放在 `data` 子目录。
+- 日志随数据根定位到 `logs` 子目录：标准模式为 `%LOCALAPPDATA%\HLaunch\logs`，便携模式为 `data\logs`。
 - `--portable` 只对本次启动强制便携模式，不创建或删除标记文件。优先级为命令行 > 标记文件 > 标准模式。
 - 相对路径只相对于数据根或 EXE 目录解析，禁止依赖进程当前工作目录。
 - 只有位于便携根目录内的目标才能转为相对路径；跨盘或根目录外目标保持绝对路径。

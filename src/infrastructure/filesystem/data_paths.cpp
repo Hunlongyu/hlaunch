@@ -62,6 +62,7 @@ std::expected<DataPaths, DataPathError> resolveDataPaths(const DataPathOptions& 
         .root = root,
         .configFile = root / L"config.json",
         .itemsFile = root / L"items.json",
+        .logDirectory = root / L"logs",
         .portable = portable,
     };
 }

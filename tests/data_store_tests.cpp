@@ -67,6 +67,7 @@ TEST_CASE("DATA-CONFIG-001 resolves standard and forced portable data roots")
     CHECK_FALSE(standard->portable);
     CHECK(standard->root == localAppData / L"HLaunch");
     CHECK(standard->configFile == standard->root / L"config.json");
+    CHECK(standard->logDirectory == standard->root / L"logs");
 
     const auto portable = hlaunch::infrastructure::filesystem::resolveDataPaths({
         .executablePath = executable,
@@ -76,6 +77,7 @@ TEST_CASE("DATA-CONFIG-001 resolves standard and forced portable data roots")
     REQUIRE(portable.has_value());
     CHECK(portable->portable);
     CHECK(portable->root == executable.parent_path() / L"data");
+    CHECK(portable->logDirectory == portable->root / L"logs");
 }
 
 TEST_CASE("DATA-CONFIG-001 portable.flag selects the portable data root")

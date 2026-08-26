@@ -34,6 +34,18 @@ target_link_libraries(
 
 add_test(NAME DATA-CONFIG-001.storage COMMAND hlaunch_data_store_tests)
 
+add_executable(hlaunch_diagnostic_log_tests diagnostic_log_tests.cpp)
+
+target_link_libraries(
+    hlaunch_diagnostic_log_tests
+    PRIVATE
+        HLaunch::InfrastructureLogging
+        HLaunch::ProjectOptions
+        doctest::doctest
+)
+
+add_test(NAME QUALITY-LOG-001.rotation-and-crash-record COMMAND hlaunch_diagnostic_log_tests)
+
 add_executable(hlaunch_app_ui_tests app_ui_tests.cpp)
 
 target_link_libraries(

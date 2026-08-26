@@ -69,6 +69,25 @@ target_link_libraries(
 )
 
 add_library(
+    hlaunch_infrastructure_logging
+    STATIC
+        infrastructure/logging/diagnostic_log.cpp
+        infrastructure/logging/diagnostic_log.h
+)
+add_library(HLaunch::InfrastructureLogging ALIAS hlaunch_infrastructure_logging)
+
+target_include_directories(
+    hlaunch_infrastructure_logging
+    PUBLIC
+        "${PROJECT_SOURCE_DIR}/src"
+)
+target_link_libraries(
+    hlaunch_infrastructure_logging
+    PRIVATE
+        HLaunch::ProjectOptions
+)
+
+add_library(
     hlaunch_activation
     STATIC
         activation/activation_context.h
@@ -199,6 +218,7 @@ target_link_libraries(
     hlaunch
     PRIVATE
         HLaunch::AppSupport
+        HLaunch::InfrastructureLogging
         HLaunch::InfrastructureStorage
         HLaunch::PlatformWindows
         HLaunch::ProjectOptions

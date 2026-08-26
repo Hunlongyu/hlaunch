@@ -2,6 +2,7 @@
 
 #include "infrastructure/filesystem/data_paths.h"
 #include "infrastructure/filesystem/data_store.h"
+#include "infrastructure/logging/diagnostic_log.h"
 #include "platform/windows/shell_launcher.h"
 
 #include <Ole2.h>
@@ -10,6 +11,7 @@
 #include <array>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 namespace hlaunch::app {
 namespace {
@@ -49,6 +51,44 @@ void showHotkeyError(const HWND owner, const platform::windows::HotkeyError& err
     MessageBoxW(owner, message.c_str(), L"HLaunch 快捷键", MB_OK | MB_ICONWARNING);
 }
 
+std::string_view loadSourceName(const infrastructure::filesystem::LoadSource source) noexcept
+{
+    using infrastructure::filesystem::LoadSource;
+    switch (source) {
+    case LoadSource::Defaults:
+        return "defaults";
+    case LoadSource::Primary:
+        return "primary";
+    case LoadSource::Backup:
+        return "backup";
+    }
+    return "unknown";
+}
+
+std::size_t itemCount(const core::ItemsDocument& document) noexcept
+{
+    std::size_t count{};
+    for (const auto& tab : document.tabs) {
+        count += tab.items.size();
+    }
+    return count;
+}
+
+std::string_view activationCommandName(
+    const platform::windows::ActivationCommand command) noexcept
+{
+    using platform::windows::ActivationCommand;
+    switch (command) {
+    case ActivationCommand::Show:
+        return "show";
+    case ActivationCommand::Hide:
+        return "hide";
+    case ActivationCommand::Toggle:
+        return "toggle";
+    }
+    return "unknown";
+}
+
 } // namespace
 
 int Application::run(const HINSTANCE instance, const StartupOptions& options)
@@ -83,23 +123,95 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
         return 4;
     }
 
+    const auto logResult = infrastructure::logging::initialize({
+        .directory = paths->logDirectory,
+    });
+    const auto logCleanup = wil::scope_exit([] {
+        infrastructure::logging::write(infrastructure::logging::Level::Info, "application_stopped");
+        infrastructure::logging::shutdown();
+    });
+    if (logResult) {
+        infrastructure::logging::installUnhandledExceptionHandler();
+        infrastructure::logging::write(
+            infrastructure::logging::Level::Info,
+            paths->portable ? "application_started mode=portable"
+                            : "application_started mode=standard");
+    }
+    else {
+        OutputDebugStringW(L"HLaunch could not initialize diagnostic logging.\n");
+    }
+
     const auto config = infrastructure::filesystem::loadConfig(paths->configFile);
     auto items = infrastructure::filesystem::loadItems(paths->itemsFile);
     if (!config || !config->value || !items || !items->value) {
+        if (!config) {
+            infrastructure::logging::writeSystemError(
+                infrastructure::logging::Level::Error,
+                "config_load_failed",
+                config.error().systemCode);
+        }
+        else if (!config->value) {
+            infrastructure::logging::write(
+                infrastructure::logging::Level::Error,
+                "config_load_rejected issue_count=" + std::to_string(config->issues.size()));
+        }
+        if (!items) {
+            infrastructure::logging::writeSystemError(
+                infrastructure::logging::Level::Error,
+                "items_load_failed",
+                items.error().systemCode);
+        }
+        else if (!items->value) {
+            infrastructure::logging::write(
+                infrastructure::logging::Level::Error,
+                "items_load_rejected issue_count=" + std::to_string(items->issues.size()));
+        }
         showStartupError(L"无法读取 HLaunch 数据文件。");
         return 5;
     }
 
+    infrastructure::logging::write(
+        infrastructure::logging::Level::Info,
+        "config_loaded source=" + std::string{loadSourceName(config->source)}
+            + " issue_count=" + std::to_string(config->issues.size()));
+    infrastructure::logging::write(
+        infrastructure::logging::Level::Info,
+        "items_loaded source=" + std::string{loadSourceName(items->source)}
+            + " tab_count=" + std::to_string(items->value->tabs.size())
+            + " item_count=" + std::to_string(itemCount(*items->value))
+            + " issue_count=" + std::to_string(items->issues.size()));
+
+    infrastructure::logging::write(
+        infrastructure::logging::Level::Info,
+        "launcher_window_create_started");
     if (!launcher_.create(
             instance,
             options.windowEffects,
             options.showSearch,
             std::move(*items->value),
-            [this](const core::LaunchItem& item) { launch(item); })
-        || !createActivationWindow(instance)) {
+            [this](const core::LaunchItem& item) { launch(item); })) {
+        infrastructure::logging::writeSystemError(
+            infrastructure::logging::Level::Error,
+            "launcher_window_create_failed",
+            GetLastError());
         showStartupError(L"无法创建 HLaunch 窗口。");
         return 6;
     }
+    infrastructure::logging::write(
+        infrastructure::logging::Level::Info,
+        "launcher_window_created");
+
+    if (!createActivationWindow(instance)) {
+        infrastructure::logging::writeSystemError(
+            infrastructure::logging::Level::Error,
+            "activation_window_create_failed",
+            GetLastError());
+        showStartupError(L"无法创建 HLaunch 窗口。");
+        return 6;
+    }
+    infrastructure::logging::write(
+        infrastructure::logging::Level::Info,
+        "activation_window_created");
 
     const auto& hotkeyConfig = config->value->activation.hotkey;
     const auto hotkeyResult = hotkey_.apply(activationWindow_, hotkeyConfig);
@@ -113,6 +225,26 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
     const bool trayStarted = trayIcon_.start(
         activationWindow_,
         LoadIconW(nullptr, IDI_APPLICATION));
+
+    if (hotkeyResult) {
+        infrastructure::logging::write(
+            infrastructure::logging::Level::Info,
+            hotkeyAvailable ? "hotkey_ready" : "hotkey_disabled");
+    }
+    else {
+        infrastructure::logging::writeSystemError(
+            infrastructure::logging::Level::Warning,
+            "hotkey_registration_failed",
+            hotkeyResult.error().systemCode);
+    }
+    infrastructure::logging::write(
+        screenEdgeStarted ? infrastructure::logging::Level::Info
+                          : infrastructure::logging::Level::Warning,
+        screenEdgeStarted ? "screen_edge_service_ready" : "screen_edge_service_failed");
+    infrastructure::logging::write(
+        trayStarted ? infrastructure::logging::Level::Info
+                    : infrastructure::logging::Level::Warning,
+        trayStarted ? "tray_icon_ready" : "tray_icon_failed");
 
     if (options.activation) {
         execute(*options.activation);
@@ -141,10 +273,21 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
     }
 
     MSG message{};
-    while (GetMessageW(&message, nullptr, 0, 0) > 0) {
+    BOOL messageResult{};
+    while ((messageResult = GetMessageW(&message, nullptr, 0, 0)) > 0) {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
+    if (messageResult == -1) {
+        infrastructure::logging::writeSystemError(
+            infrastructure::logging::Level::Error,
+            "message_loop_failed",
+            GetLastError());
+        return 7;
+    }
+    infrastructure::logging::write(
+        infrastructure::logging::Level::Info,
+        "message_loop_stopped exit_code=" + std::to_string(message.wParam));
     return static_cast<int>(message.wParam);
 }
 
@@ -242,6 +385,9 @@ LRESULT Application::handleActivationMessage(
 
 void Application::execute(const platform::windows::ActivationCommand command)
 {
+    infrastructure::logging::write(
+        infrastructure::logging::Level::Debug,
+        "activation command=" + std::string{activationCommandName(command)});
     switch (command) {
     case platform::windows::ActivationCommand::Show:
         launcher_.show();
@@ -257,14 +403,29 @@ void Application::execute(const platform::windows::ActivationCommand command)
 
 void Application::launch(const core::LaunchItem& item)
 {
+    infrastructure::logging::write(
+        infrastructure::logging::Level::Info,
+        "item_launch_started type=" + std::to_string(static_cast<unsigned int>(item.type)));
     const auto result = platform::windows::launchItem(launcher_.handle(), item);
     if (result) {
+        infrastructure::logging::write(
+            infrastructure::logging::Level::Info,
+            "item_launch_succeeded");
         launcher_.hide();
         return;
     }
     if (result.error().code == platform::windows::ShellLaunchErrorCode::Cancelled) {
+        infrastructure::logging::write(
+            infrastructure::logging::Level::Warning,
+            "item_launch_cancelled");
         return;
     }
+
+    infrastructure::logging::writeSystemError(
+        infrastructure::logging::Level::Error,
+        "item_launch_failed error_code="
+            + std::to_string(static_cast<unsigned int>(result.error().code)),
+        result.error().systemCode);
 
     std::wstring message = result.error().code
         == platform::windows::ShellLaunchErrorCode::InvalidUtf8
