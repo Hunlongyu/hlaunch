@@ -2,6 +2,7 @@
 
 #include "activation/activation_context.h"
 #include "core/data_model.h"
+#include "core/search_index.h"
 #include "platform/windows/window_effects.h"
 #include "ui/search_window.h"
 
@@ -11,7 +12,10 @@
 #include <winrt/base.h>
 
 #include <functional>
+#include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace hlaunch::ui {
 
@@ -52,9 +56,18 @@ private:
     void positionSearchWindow();
     void render();
     [[nodiscard]] bool handleKeyDown(WPARAM key);
+    [[nodiscard]] bool handleSearchKeyDown(WPARAM key);
+    void beginSearch(std::wstring_view initialText = {});
+    void updateSearch(std::wstring_view query);
     void activateFocusedItem();
     void changeActiveTab(std::size_t tabIndex);
     [[nodiscard]] const core::Tab* activeTab() const noexcept;
+    struct DisplayedItem {
+        const core::LaunchItem* item{};
+        const core::Tab* tab{};
+    };
+    [[nodiscard]] std::optional<DisplayedItem> displayedItem(std::size_t index) const noexcept;
+    [[nodiscard]] bool isSearchFiltering() const noexcept;
     [[nodiscard]] std::size_t visibleItemCount() const noexcept;
     [[nodiscard]] std::size_t displayedTileCount() const noexcept;
     void drawText(
@@ -68,6 +81,8 @@ private:
     bool translucentSurface_{true};
     bool searchVisible_{};
     core::ItemsDocument document_{};
+    core::SearchIndex searchIndex_{};
+    std::vector<core::SearchResult> searchResults_{};
     std::size_t activeTabIndex_{};
     std::size_t focusedItemIndex_{};
     bool windowFocused_{};
@@ -79,6 +94,7 @@ private:
     winrt::com_ptr<IDWriteTextFormat> titleFormat_{};
     winrt::com_ptr<IDWriteTextFormat> bodyFormat_{};
     winrt::com_ptr<IDWriteTextFormat> smallFormat_{};
+    winrt::com_ptr<IDWriteTextFormat> captionFormat_{};
     winrt::com_ptr<IDWriteTextFormat> tabFormat_{};
     winrt::com_ptr<IDWriteTextFormat> iconFormat_{};
     winrt::com_ptr<ID2D1SolidColorBrush> backgroundBrush_{};

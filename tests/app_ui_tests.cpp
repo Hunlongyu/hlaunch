@@ -4,12 +4,27 @@
 #include "platform/windows/activation_command.h"
 #include "platform/windows/window_effects.h"
 #include "ui/launcher_layout.h"
+#include "ui/launcher_window.h"
 
 #include <doctest/doctest.h>
 
 #include <array>
+#include <string>
 #include <string_view>
 #include <utility>
+
+namespace {
+
+hlaunch::core::LaunchItem searchableItem(std::string id, std::string name)
+{
+    return hlaunch::core::LaunchItem{
+        .id = std::move(id),
+        .name = std::move(name),
+        .target = "not-used-by-test",
+    };
+}
+
+} // namespace
 
 TEST_CASE("PLAT-SINGLE-001 command line maps activation commands without payload pointers")
 {
@@ -104,6 +119,50 @@ TEST_CASE("PROD-GRID-001 detached search aligns without changing the launcher Gr
     CHECK(search.windowHeightDip == doctest::Approx(60.0F));
     CHECK(search.field.x == doctest::Approx(8.0F));
     CHECK(search.field.width == doctest::Approx(404.0F));
+}
+
+TEST_CASE("PROD-GRID-001 launcher typing searches every tab and Enter invokes the exact match")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {
+            hlaunch::core::Tab{
+                .id = "11111111-1111-4111-8111-111111111111",
+                .name = "Common",
+                .items = {searchableItem(
+                    "11111111-1111-4111-8111-111111111101",
+                    "Alphabet")},
+            },
+            hlaunch::core::Tab{
+                .id = "22222222-2222-4222-8222-222222222222",
+                .name = "Development",
+                .items = {searchableItem(
+                    "22222222-2222-4222-8222-222222222201",
+                    "Alpha")},
+            },
+        },
+    };
+    std::string launchedId{};
+    hlaunch::ui::LauncherWindow launcher{};
+    REQUIRE(launcher.create(
+        GetModuleHandleW(nullptr),
+        hlaunch::platform::windows::WindowEffects{
+            .backdrop = hlaunch::platform::windows::WindowBackdrop::Solid,
+        },
+        false,
+        std::move(document),
+        [&launchedId](const hlaunch::core::LaunchItem& item) {
+            launchedId = item.id;
+        }));
+
+    SendMessageW(launcher.handle(), WM_CHAR, L'a', 0);
+    const auto search = FindWindowW(L"HLaunch.SearchWindow.v1", L"HLaunch Search");
+    REQUIRE(search != nullptr);
+    for (const wchar_t character : std::wstring_view{L"lpha"}) {
+        SendMessageW(search, WM_CHAR, character, 0);
+    }
+    SendMessageW(search, WM_KEYDOWN, VK_RETURN, 0);
+
+    CHECK(launchedId == "22222222-2222-4222-8222-222222222201");
 }
 
 TEST_CASE("PROD-GRID-001 launcher layout always retains at least one column")

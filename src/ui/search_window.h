@@ -8,10 +8,17 @@
 #include <dwrite.h>
 #include <winrt/base.h>
 
+#include <functional>
+#include <string>
+#include <string_view>
+
 namespace hlaunch::ui {
 
 class SearchWindow final {
 public:
+    using QueryChangedHandler = std::function<void(std::wstring_view)>;
+    using KeyHandler = std::function<bool(WPARAM)>;
+
     SearchWindow() = default;
     ~SearchWindow();
 
@@ -21,13 +28,17 @@ public:
     [[nodiscard]] bool create(
         HINSTANCE instance,
         HWND owner,
-        const platform::windows::WindowEffects& effects);
+        const platform::windows::WindowEffects& effects,
+        QueryChangedHandler queryChangedHandler,
+        KeyHandler keyHandler);
     void show();
     void positionAttached(HWND owner, UINT dpi, const SearchPopupLayout& layout);
     void hide();
+    void setQuery(std::wstring query);
 
     [[nodiscard]] HWND handle() const noexcept;
     [[nodiscard]] bool isVisible() const noexcept;
+    [[nodiscard]] std::wstring_view query() const noexcept;
 
 private:
     static LRESULT CALLBACK windowProcedure(
@@ -40,12 +51,18 @@ private:
     [[nodiscard]] bool createDeviceIndependentResources();
     [[nodiscard]] bool createDeviceResources();
     void discardDeviceResources() noexcept;
+    void notifyQueryChanged();
+    void eraseLastCharacter();
+    void pasteClipboardText();
     void render();
 
     HWND window_{};
     UINT dpi_{96};
     bool translucentSurface_{true};
     SearchPopupLayout layout_{};
+    std::wstring query_{};
+    QueryChangedHandler queryChangedHandler_{};
+    KeyHandler keyHandler_{};
     winrt::com_ptr<ID2D1Factory> d2dFactory_{};
     winrt::com_ptr<IDWriteFactory> writeFactory_{};
     winrt::com_ptr<ID2D1HwndRenderTarget> renderTarget_{};
@@ -53,6 +70,7 @@ private:
     winrt::com_ptr<ID2D1SolidColorBrush> backgroundBrush_{};
     winrt::com_ptr<ID2D1SolidColorBrush> surfaceBrush_{};
     winrt::com_ptr<ID2D1SolidColorBrush> textBrush_{};
+    winrt::com_ptr<ID2D1SolidColorBrush> queryTextBrush_{};
     winrt::com_ptr<ID2D1SolidColorBrush> borderBrush_{};
 };
 

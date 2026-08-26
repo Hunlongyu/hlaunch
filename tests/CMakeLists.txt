@@ -46,6 +46,19 @@ target_link_libraries(
 
 add_test(NAME QUALITY-LOG-001.rotation-and-crash-record COMMAND hlaunch_diagnostic_log_tests)
 
+add_executable(hlaunch_search_tests search_tests.cpp)
+
+target_link_libraries(
+    hlaunch_search_tests
+    PRIVATE
+        HLaunch::Core
+        HLaunch::PlatformWindows
+        HLaunch::ProjectOptions
+        doctest::doctest
+)
+
+add_test(NAME PROD-GRID-001.search COMMAND hlaunch_search_tests)
+
 add_executable(hlaunch_app_ui_tests app_ui_tests.cpp)
 
 target_link_libraries(

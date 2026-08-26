@@ -1,5 +1,6 @@
 #include "ui/launcher_window.h"
 
+#include "platform/windows/search_text.h"
 #include "ui/launcher_layout.h"
 
 #include <d2d1helper.h>
@@ -104,6 +105,9 @@ bool LauncherWindow::create(
     LaunchHandler launchHandler)
 {
     document_ = std::move(document);
+    searchIndex_.rebuild(document_, [](const std::string_view name) {
+        return platform::windows::normalizeSearchText(name);
+    });
     launchHandler_ = std::move(launchHandler);
     activeTabIndex_ = 0;
     WNDCLASSEXW windowClass{};
@@ -143,7 +147,12 @@ bool LauncherWindow::create(
 
     translucentSurface_ = effects.backdrop != platform::windows::WindowBackdrop::Solid;
     static_cast<void>(platform::windows::applyWindowEffects(window_, effects));
-    if (!searchWindow_.create(instance, window_, effects)) {
+    if (!searchWindow_.create(
+            instance,
+            window_,
+            effects,
+            [this](const std::wstring_view query) { updateSearch(query); },
+            [this](const WPARAM key) { return handleSearchKeyDown(key); })) {
         return false;
     }
     searchVisible_ = showSearch;
@@ -162,7 +171,12 @@ void LauncherWindow::show()
         searchWindow_.hide();
     }
     SetForegroundWindow(window_);
-    SetFocus(window_);
+    if (searchVisible_) {
+        SetFocus(searchWindow_.handle());
+    }
+    else {
+        SetFocus(window_);
+    }
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -178,7 +192,12 @@ void LauncherWindow::showAtScreenEdge(const activation::ScreenEdgeHit& hit)
         searchWindow_.hide();
     }
     SetForegroundWindow(window_);
-    SetFocus(window_);
+    if (searchVisible_) {
+        SetFocus(searchWindow_.handle());
+    }
+    else {
+        SetFocus(window_);
+    }
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -261,6 +280,9 @@ void LauncherWindow::positionOnScreenEdge(const activation::ScreenEdgeHit& hit)
 
 void LauncherWindow::hide()
 {
+    searchVisible_ = false;
+    searchResults_.clear();
+    searchWindow_.setQuery({});
     searchWindow_.hide();
     ShowWindow(window_, SW_HIDE);
 }
@@ -346,6 +368,28 @@ LRESULT LauncherWindow::handleMessage(
         return handleKeyDown(wParam)
             ? 0
             : DefWindowProcW(window_, message, wParam, lParam);
+    case WM_CHAR:
+        if (wParam >= 0x20 && wParam != 0x7F) {
+            beginSearch(std::wstring(1, static_cast<wchar_t>(wParam)));
+        }
+        return 0;
+    case WM_UNICHAR:
+        if (wParam == UNICODE_NOCHAR) {
+            return TRUE;
+        }
+        if (wParam >= 0x20 && wParam <= 0x10FFFF) {
+            std::wstring initialText{};
+            if (wParam <= 0xFFFF) {
+                initialText.push_back(static_cast<wchar_t>(wParam));
+            }
+            else {
+                const auto codePoint = static_cast<unsigned long>(wParam) - 0x10000UL;
+                initialText.push_back(static_cast<wchar_t>(0xD800UL + (codePoint >> 10U)));
+                initialText.push_back(static_cast<wchar_t>(0xDC00UL + (codePoint & 0x3FFUL)));
+            }
+            beginSearch(initialText);
+        }
+        return 0;
     case WM_NCHITTEST: {
         POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         ScreenToClient(window_, &point);
@@ -388,22 +432,24 @@ LRESULT LauncherWindow::handleMessage(
             DestroyWindow(window_);
             return 0;
         }
-        if (const auto tabIndex = hitTestLauncherTab(
-                layout,
-                document_.tabs.size(),
-                xDip,
-                yDip)) {
-            SetFocus(window_);
-            changeActiveTab(*tabIndex);
-            return 0;
+        if (!isSearchFiltering()) {
+            if (const auto tabIndex = hitTestLauncherTab(
+                    layout,
+                    document_.tabs.size(),
+                    xDip,
+                    yDip)) {
+                SetFocus(window_);
+                changeActiveTab(*tabIndex);
+                return 0;
+            }
         }
         if (const auto itemIndex = hitTestLauncherItem(layout, xDip, yDip)) {
-            const auto* tab = activeTab();
-            if (tab && *itemIndex < tab->items.size() && launchHandler_) {
+            if (const auto displayed = displayedItem(*itemIndex);
+                displayed && displayed->item && launchHandler_) {
                 focusedItemIndex_ = *itemIndex;
                 SetFocus(window_);
                 InvalidateRect(window_, nullptr, FALSE);
-                launchHandler_(tab->items[*itemIndex]);
+                launchHandler_(*displayed->item);
             }
         }
         return 0;
@@ -506,6 +552,17 @@ bool LauncherWindow::createDeviceIndependentResources()
     if (FAILED(writeFactory_->CreateTextFormat(
             fontFamily,
             nullptr,
+            DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            10.0F,
+            L"zh-CN",
+            captionFormat_.put()))) {
+        return false;
+    }
+    if (FAILED(writeFactory_->CreateTextFormat(
+            fontFamily,
+            nullptr,
             DWRITE_FONT_WEIGHT_MEDIUM,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
@@ -529,6 +586,8 @@ bool LauncherWindow::createDeviceIndependentResources()
     bodyFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     smallFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     smallFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    captionFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    captionFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
     tabFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     tabFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
     iconFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -668,28 +727,43 @@ void LauncherWindow::render()
         mutedTextBrush_.get(),
         1.5F);
 
+    const bool filtering = isSearchFiltering();
     const auto tabCount = document_.tabs.size();
-    const float tabWidth = tabCount > 0
-        ? layout.tabs.width / static_cast<float>(tabCount)
-        : layout.tabs.width;
-    for (std::size_t index = 0; index < tabCount; ++index) {
-        const auto tabRect = D2D1::RectF(
-            layout.tabs.x + static_cast<float>(index) * tabWidth,
-            layout.tabs.y,
-            layout.tabs.x + static_cast<float>(index + 1) * tabWidth,
-            layout.tabs.y + layout.tabs.height);
+    if (filtering) {
+        const auto tabRect = toD2dRect(layout.tabs);
         drawText(
-            utf8ToWide(document_.tabs[index].name),
+            L"搜索结果 · " + std::to_wstring(searchResults_.size()),
             tabRect,
             tabFormat_.get(),
-            index == activeTabIndex_ ? textBrush_.get() : mutedTextBrush_.get());
-        if (index == activeTabIndex_) {
-            renderTarget_->FillRectangle(
-                D2D1::RectF(tabRect.left + 10.0F, tabRect.bottom - 2.0F, tabRect.right - 10.0F, tabRect.bottom),
-                accentBrush_.get());
+            textBrush_.get());
+        const float center = (tabRect.left + tabRect.right) / 2.0F;
+        renderTarget_->FillRectangle(
+            D2D1::RectF(center - 48.0F, tabRect.bottom - 2.0F, center + 48.0F, tabRect.bottom),
+            accentBrush_.get());
+    }
+    else {
+        const float tabWidth = tabCount > 0
+            ? layout.tabs.width / static_cast<float>(tabCount)
+            : layout.tabs.width;
+        for (std::size_t index = 0; index < tabCount; ++index) {
+            const auto tabRect = D2D1::RectF(
+                layout.tabs.x + static_cast<float>(index) * tabWidth,
+                layout.tabs.y,
+                layout.tabs.x + static_cast<float>(index + 1) * tabWidth,
+                layout.tabs.y + layout.tabs.height);
+            drawText(
+                utf8ToWide(document_.tabs[index].name),
+                tabRect,
+                tabFormat_.get(),
+                index == activeTabIndex_ ? textBrush_.get() : mutedTextBrush_.get());
+            if (index == activeTabIndex_) {
+                renderTarget_->FillRectangle(
+                    D2D1::RectF(tabRect.left + 10.0F, tabRect.bottom - 2.0F, tabRect.right - 10.0F, tabRect.bottom),
+                    accentBrush_.get());
+            }
         }
     }
-    if (tabCount == 0) {
+    if (!filtering && tabCount == 0) {
         drawText(
             L"暂无分类",
             toD2dRect(layout.tabs),
@@ -700,14 +774,17 @@ void LauncherWindow::render()
     const auto gridBounds = toD2dRect(layout.grid);
     renderTarget_->PushAxisAlignedClip(gridBounds, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
     const auto* tab = activeTab();
-    const auto realItemCount = tab
-        ? std::min(tab->items.size(), maximumVisibleItems)
-        : 0U;
+    const auto realItemCount = visibleItemCount();
     for (std::size_t index = 0; index < layout.items.size(); ++index) {
-        const bool addTile = index >= realItemCount;
-        const auto name = addTile ? std::wstring{L"添加"} : utf8ToWide(tab->items[index].name);
+        const auto displayed = displayedItem(index);
+        const bool addTile = !filtering && index >= realItemCount;
+        const auto name = addTile || !displayed || !displayed->item
+            ? std::wstring{L"添加"}
+            : utf8ToWide(displayed->item->name);
         const auto glyph = addTile ? std::wstring{L"+"} : itemGlyph(name);
-        const auto color = addTile ? 0x64748BU : itemColor(tab->items[index].type);
+        const auto color = addTile || !displayed || !displayed->item
+            ? 0x64748BU
+            : itemColor(displayed->item->type);
         const auto tile = toD2dRect(layout.items[index]);
         renderTarget_->FillRoundedRectangle(
             D2D1::RoundedRect(tile, cornerRadius, cornerRadius),
@@ -716,7 +793,8 @@ void LauncherWindow::render()
             D2D1::RoundedRect(tile, cornerRadius, cornerRadius),
             borderBrush_.get(),
             1.0F);
-        if (!addTile && windowFocused_ && index == focusedItemIndex_) {
+        const bool keyboardFocused = windowFocused_ || GetFocus() == searchWindow_.handle();
+        if (!addTile && keyboardFocused && index == focusedItemIndex_) {
             const auto focusBounds = D2D1::RectF(
                 tile.left + 2.0F,
                 tile.top + 2.0F,
@@ -745,13 +823,38 @@ void LauncherWindow::render()
             iconRect,
             iconFormat_.get(),
             textBrush_.get());
-        drawText(
-            name,
-            D2D1::RectF(tile.left + 3.0F, tile.top + 54.0F, tile.right - 3.0F, tile.bottom - 4.0F),
-            smallFormat_.get(),
-            addTile ? mutedTextBrush_.get() : textBrush_.get());
+        if (filtering && displayed && displayed->tab) {
+            drawText(
+                name,
+                D2D1::RectF(tile.left + 3.0F, tile.top + 50.0F, tile.right - 3.0F, tile.top + 69.0F),
+                smallFormat_.get(),
+                textBrush_.get());
+            drawText(
+                utf8ToWide(displayed->tab->name),
+                D2D1::RectF(tile.left + 3.0F, tile.top + 66.0F, tile.right - 3.0F, tile.bottom - 2.0F),
+                captionFormat_.get(),
+                mutedTextBrush_.get());
+        }
+        else {
+            drawText(
+                name,
+                D2D1::RectF(tile.left + 3.0F, tile.top + 54.0F, tile.right - 3.0F, tile.bottom - 4.0F),
+                smallFormat_.get(),
+                addTile ? mutedTextBrush_.get() : textBrush_.get());
+        }
     }
-    if (tab && tab->items.empty()) {
+    if (filtering && searchResults_.empty()) {
+        drawText(
+            L"没有找到匹配项",
+            D2D1::RectF(
+                gridBounds.left,
+                gridBounds.top + 92.0F,
+                gridBounds.right,
+                gridBounds.top + 128.0F),
+            bodyFormat_.get(),
+            mutedTextBrush_.get());
+    }
+    else if (!filtering && tab && tab->items.empty()) {
         drawText(
             L"暂无条目",
             D2D1::RectF(
@@ -773,6 +876,10 @@ void LauncherWindow::render()
 
 bool LauncherWindow::handleKeyDown(const WPARAM key)
 {
+    if (key == L'F' && GetKeyState(VK_CONTROL) < 0) {
+        beginSearch();
+        return true;
+    }
     if (key == VK_ESCAPE) {
         hide();
         return true;
@@ -837,11 +944,61 @@ bool LauncherWindow::handleKeyDown(const WPARAM key)
     return true;
 }
 
+bool LauncherWindow::handleSearchKeyDown(const WPARAM key)
+{
+    if (key == VK_ESCAPE) {
+        if (!searchWindow_.query().empty()) {
+            searchWindow_.setQuery({});
+        }
+        else {
+            hide();
+        }
+        return true;
+    }
+    if (key == VK_RETURN) {
+        activateFocusedItem();
+        return true;
+    }
+    if (key == VK_TAB) {
+        return true;
+    }
+    return handleKeyDown(key);
+}
+
+void LauncherWindow::beginSearch(const std::wstring_view initialText)
+{
+    searchVisible_ = true;
+    positionSearchWindow();
+    searchWindow_.show();
+
+    if (!initialText.empty()) {
+        std::wstring query{searchWindow_.query()};
+        query.append(initialText);
+        searchWindow_.setQuery(std::move(query));
+    }
+    else {
+        updateSearch(searchWindow_.query());
+    }
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::updateSearch(const std::wstring_view query)
+{
+    searchResults_.clear();
+    if (!query.empty()) {
+        if (const auto normalizedQuery = platform::windows::normalizeSearchText(query)) {
+            searchResults_ = searchIndex_.search(*normalizedQuery, maximumVisibleItems);
+        }
+    }
+    focusedItemIndex_ = 0;
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
 void LauncherWindow::activateFocusedItem()
 {
-    const auto* tab = activeTab();
-    if (tab && focusedItemIndex_ < visibleItemCount() && launchHandler_) {
-        launchHandler_(tab->items[focusedItemIndex_]);
+    if (const auto displayed = displayedItem(focusedItemIndex_);
+        displayed && displayed->item && launchHandler_) {
+        launchHandler_(*displayed->item);
     }
 }
 
@@ -863,14 +1020,50 @@ const core::Tab* LauncherWindow::activeTab() const noexcept
     return &document_.tabs[activeTabIndex_];
 }
 
+std::optional<LauncherWindow::DisplayedItem> LauncherWindow::displayedItem(
+    const std::size_t index) const noexcept
+{
+    if (isSearchFiltering()) {
+        if (index >= searchResults_.size()) {
+            return std::nullopt;
+        }
+        const auto& result = searchResults_[index];
+        if (result.tabIndex >= document_.tabs.size()) {
+            return std::nullopt;
+        }
+        const auto& tab = document_.tabs[result.tabIndex];
+        if (result.itemIndex >= tab.items.size()) {
+            return std::nullopt;
+        }
+        return DisplayedItem{&tab.items[result.itemIndex], &tab};
+    }
+
+    const auto* tab = activeTab();
+    if (!tab || index >= visibleItemCount()) {
+        return std::nullopt;
+    }
+    return DisplayedItem{&tab->items[index], tab};
+}
+
+bool LauncherWindow::isSearchFiltering() const noexcept
+{
+    return searchVisible_ && !searchWindow_.query().empty();
+}
+
 std::size_t LauncherWindow::visibleItemCount() const noexcept
 {
+    if (isSearchFiltering()) {
+        return std::min(searchResults_.size(), maximumVisibleItems);
+    }
     const auto* tab = activeTab();
     return tab ? std::min(tab->items.size(), maximumVisibleItems) : 0U;
 }
 
 std::size_t LauncherWindow::displayedTileCount() const noexcept
 {
+    if (isSearchFiltering()) {
+        return visibleItemCount();
+    }
     if (!activeTab()) {
         return 0;
     }

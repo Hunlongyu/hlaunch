@@ -1,15 +1,19 @@
 #include "ui/search_window.h"
 
 #include <d2d1helper.h>
+#include <windowsx.h>
 
 #include <cmath>
+#include <string>
 #include <string_view>
+#include <utility>
 
 namespace hlaunch::ui {
 namespace {
 
 constexpr wchar_t searchWindowClass[] = L"HLaunch.SearchWindow.v1";
 constexpr float cornerRadius = 12.0F;
+constexpr std::size_t maximumQueryLength = 256;
 
 int dipToPixels(const float dip, const UINT dpi) noexcept
 {
@@ -37,8 +41,12 @@ SearchWindow::~SearchWindow()
 bool SearchWindow::create(
     const HINSTANCE instance,
     const HWND owner,
-    const platform::windows::WindowEffects& effects)
+    const platform::windows::WindowEffects& effects,
+    QueryChangedHandler queryChangedHandler,
+    KeyHandler keyHandler)
 {
+    queryChangedHandler_ = std::move(queryChangedHandler);
+    keyHandler_ = std::move(keyHandler);
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(WNDCLASSEXW);
     windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW;
@@ -75,6 +83,7 @@ bool SearchWindow::create(
 void SearchWindow::show()
 {
     ShowWindow(window_, SW_SHOWNOACTIVATE);
+    SetFocus(window_);
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -114,6 +123,19 @@ void SearchWindow::hide()
     }
 }
 
+void SearchWindow::setQuery(std::wstring query)
+{
+    if (query.size() > maximumQueryLength) {
+        query.resize(maximumQueryLength);
+    }
+    if (query_ == query) {
+        return;
+    }
+    query_ = std::move(query);
+    notifyQueryChanged();
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
 HWND SearchWindow::handle() const noexcept
 {
     return window_;
@@ -122,6 +144,11 @@ HWND SearchWindow::handle() const noexcept
 bool SearchWindow::isVisible() const noexcept
 {
     return window_ && IsWindowVisible(window_);
+}
+
+std::wstring_view SearchWindow::query() const noexcept
+{
+    return query_;
 }
 
 LRESULT CALLBACK SearchWindow::windowProcedure(
@@ -160,6 +187,57 @@ LRESULT SearchWindow::handleMessage(
         return 0;
     case WM_ERASEBKGND: // NOLINT(bugprone-branch-clone): TRUE and HTCLIENT both equal 1 but represent different Win32 contracts.
         return 1;
+    case WM_GETDLGCODE:
+        return DLGC_WANTARROWS | DLGC_WANTTAB | DLGC_WANTCHARS | DLGC_WANTALLKEYS;
+    case WM_SETFOCUS:
+    case WM_KILLFOCUS:
+        InvalidateRect(window_, nullptr, FALSE);
+        return 0;
+    case WM_LBUTTONUP:
+        SetFocus(window_);
+        return 0;
+    case WM_KEYDOWN:
+        if (wParam == VK_BACK) {
+            eraseLastCharacter();
+            return 0;
+        }
+        if (wParam == L'V' && GetKeyState(VK_CONTROL) < 0) {
+            pasteClipboardText();
+            return 0;
+        }
+        if (keyHandler_ && keyHandler_(wParam)) {
+            return 0;
+        }
+        return DefWindowProcW(window_, message, wParam, lParam);
+    case WM_CHAR:
+        if (wParam >= 0x20 && wParam != 0x7F && query_.size() < maximumQueryLength) {
+            query_.push_back(static_cast<wchar_t>(wParam));
+            notifyQueryChanged();
+            InvalidateRect(window_, nullptr, FALSE);
+        }
+        return 0;
+    case WM_UNICHAR:
+        if (wParam == UNICODE_NOCHAR) {
+            return TRUE;
+        }
+        if (wParam >= 0x20 && wParam <= 0x10FFFF) {
+            bool changed = false;
+            if (wParam <= 0xFFFF && query_.size() < maximumQueryLength) {
+                query_.push_back(static_cast<wchar_t>(wParam));
+                changed = true;
+            }
+            else if (query_.size() + 1U < maximumQueryLength) {
+                const auto codePoint = static_cast<unsigned long>(wParam) - 0x10000UL;
+                query_.push_back(static_cast<wchar_t>(0xD800UL + (codePoint >> 10U)));
+                query_.push_back(static_cast<wchar_t>(0xDC00UL + (codePoint & 0x3FFUL)));
+                changed = true;
+            }
+            if (changed) {
+                notifyQueryChanged();
+                InvalidateRect(window_, nullptr, FALSE);
+            }
+        }
+        return 0;
     case WM_NCHITTEST:
         return HTCLIENT;
     case WM_SIZE:
@@ -256,6 +334,7 @@ bool SearchWindow::createDeviceResources()
         {0x0B1120, translucentSurface_ ? 0.70F : 1.0F, &backgroundBrush_},
         {0x121B2D, translucentSurface_ ? 0.86F : 1.0F, &surfaceBrush_},
         {0x94A3B8, 1.0F, &textBrush_},
+        {0xF8FAFC, 1.0F, &queryTextBrush_},
         {0x52627D, translucentSurface_ ? 0.68F : 1.0F, &borderBrush_},
     };
     for (const auto& brush : brushes) {
@@ -272,10 +351,67 @@ bool SearchWindow::createDeviceResources()
 void SearchWindow::discardDeviceResources() noexcept
 {
     borderBrush_ = nullptr;
+    queryTextBrush_ = nullptr;
     textBrush_ = nullptr;
     surfaceBrush_ = nullptr;
     backgroundBrush_ = nullptr;
     renderTarget_ = nullptr;
+}
+
+void SearchWindow::notifyQueryChanged()
+{
+    if (queryChangedHandler_) {
+        queryChangedHandler_(query_);
+    }
+}
+
+void SearchWindow::eraseLastCharacter()
+{
+    if (query_.empty()) {
+        return;
+    }
+    query_.pop_back();
+    if (!query_.empty() && IS_HIGH_SURROGATE(query_.back())) {
+        query_.pop_back();
+    }
+    notifyQueryChanged();
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void SearchWindow::pasteClipboardText()
+{
+    if (!OpenClipboard(window_)) {
+        return;
+    }
+    const HANDLE textHandle = GetClipboardData(CF_UNICODETEXT);
+    if (!textHandle) {
+        CloseClipboard();
+        return;
+    }
+    const auto* text = static_cast<const wchar_t*>(
+        GlobalLock(static_cast<HGLOBAL>(textHandle)));
+    if (!text) {
+        CloseClipboard();
+        return;
+    }
+
+    bool changed = false;
+    for (std::size_t index = 0; text[index] != L'\0' && query_.size() < maximumQueryLength; ++index) {
+        wchar_t character = text[index];
+        if (character == L'\r' || character == L'\n' || character == L'\t') {
+            character = L' ';
+        }
+        if (character >= 0x20) {
+            query_.push_back(character);
+            changed = true;
+        }
+    }
+    GlobalUnlock(static_cast<HGLOBAL>(textHandle));
+    CloseClipboard();
+    if (changed) {
+        notifyQueryChanged();
+        InvalidateRect(window_, nullptr, FALSE);
+    }
 }
 
 void SearchWindow::render()
@@ -311,13 +447,25 @@ void SearchWindow::render()
         D2D1::Point2F(field.left + 32.0F, field.top + 31.0F),
         textBrush_.get(),
         1.5F);
-    constexpr std::wstring_view searchPrompt = L"搜索应用、文件和文件夹";
+    constexpr std::wstring_view searchPrompt = L"搜索全部分类";
+    std::wstring displayedText{};
+    ID2D1Brush* displayedBrush = textBrush_.get();
+    if (query_.empty()) {
+        displayedText = searchPrompt;
+    }
+    else {
+        displayedText = query_;
+        if (GetFocus() == window_) {
+            displayedText += L"|";
+        }
+        displayedBrush = queryTextBrush_.get();
+    }
     renderTarget_->DrawTextW(
-        searchPrompt.data(),
-        static_cast<UINT32>(searchPrompt.size()),
+        displayedText.data(),
+        static_cast<UINT32>(displayedText.size()),
         bodyFormat_.get(),
         D2D1::RectF(field.left + 46.0F, field.top, field.right - 16.0F, field.bottom),
-        textBrush_.get(),
+        displayedBrush,
         D2D1_DRAW_TEXT_OPTIONS_CLIP,
         DWRITE_MEASURING_MODE_NATURAL);
 

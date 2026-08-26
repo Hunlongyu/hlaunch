@@ -2,6 +2,8 @@ add_library(
     hlaunch_core
     STATIC
         core/data_model.h
+        core/search_index.cpp
+        core/search_index.h
         core/data_validation.cpp
         core/data_validation.h
 )
@@ -117,6 +119,8 @@ add_library(
         platform/windows/global_hotkey.h
         platform/windows/screen_edge_activation.cpp
         platform/windows/screen_edge_activation.h
+        platform/windows/search_text.cpp
+        platform/windows/search_text.h
         platform/windows/shell_launcher.cpp
         platform/windows/shell_launcher.h
         platform/windows/single_instance.cpp
