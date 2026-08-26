@@ -448,9 +448,12 @@ void SearchWindow::render()
 
     renderTarget_->BeginDraw();
     const auto& palette = paletteFor(themeMode_);
-    renderTarget_->Clear(D2D1::ColorF(
-        palette.background,
-        translucentSurface_ ? (themeMode_ == core::ThemeMode::Light ? 0.90F : 0.70F) : 1.0F));
+    if (translucentSurface_) {
+        renderTarget_->Clear(D2D1::ColorF(0x000000, 0.0F));
+    }
+    else {
+        renderTarget_->Clear(D2D1::ColorF(palette.background, 1.0F));
+    }
 
     const auto field = toD2dRect(layout_.field);
     renderTarget_->FillRoundedRectangle(

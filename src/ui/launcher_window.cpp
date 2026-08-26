@@ -1027,9 +1027,12 @@ void LauncherWindow::render()
 
     renderTarget_->BeginDraw();
     const auto& palette = paletteFor(themeMode_);
-    renderTarget_->Clear(D2D1::ColorF(
-        palette.background,
-        translucentSurface_ ? (themeMode_ == core::ThemeMode::Light ? 0.88F : 0.64F) : 1.0F));
+    if (translucentSurface_) {
+        renderTarget_->Clear(D2D1::ColorF(0x000000, 0.0F));
+    }
+    else {
+        renderTarget_->Clear(D2D1::ColorF(palette.background, 1.0F));
+    }
 
     const auto header = toD2dRect(layout.header);
     const auto menuButton = toD2dRect(layout.menuButton);
