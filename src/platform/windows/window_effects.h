@@ -16,6 +16,8 @@ enum class WindowBackdrop : std::uint8_t {
 struct WindowEffects {
     WindowBackdrop backdrop{WindowBackdrop::Acrylic};
     std::uint8_t opacityPercent{95};
+
+    bool operator==(const WindowEffects&) const = default;
 };
 
 struct WindowEffectsResult {

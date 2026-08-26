@@ -16,6 +16,8 @@ struct StartupOptions {
     bool showSearch{};
     std::optional<platform::windows::ActivationCommand> activation{};
     platform::windows::WindowEffects windowEffects{};
+    bool backdropSpecified{};
+    bool opacitySpecified{};
 };
 
 [[nodiscard]] std::expected<StartupOptions, std::wstring> parseCommandLine(

@@ -51,6 +51,7 @@ bool SearchWindow::create(
     queryChangedHandler_ = std::move(queryChangedHandler);
     keyHandler_ = std::move(keyHandler);
     themeMode_ = themeMode;
+    windowEffects_ = effects;
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(WNDCLASSEXW);
     windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW;
@@ -92,6 +93,19 @@ void SearchWindow::setThemeMode(const core::ThemeMode themeMode)
     }
     themeMode_ = themeMode;
     applyNativeWindowTheme(window_, themeMode_);
+    discardDeviceResources();
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void SearchWindow::setWindowEffects(
+    const platform::windows::WindowEffects& effects)
+{
+    if (windowEffects_ == effects) {
+        return;
+    }
+    windowEffects_ = effects;
+    translucentSurface_ = effects.backdrop != platform::windows::WindowBackdrop::Solid;
+    static_cast<void>(platform::windows::applyWindowEffects(window_, effects));
     discardDeviceResources();
     InvalidateRect(window_, nullptr, FALSE);
 }

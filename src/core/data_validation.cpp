@@ -135,6 +135,27 @@ std::vector<ValidationIssue> validateConfig(const ApplicationConfig& config)
         break;
     }
 
+    switch (config.appearance.backdrop) {
+    case BackdropMode::Solid:
+    case BackdropMode::Mica:
+    case BackdropMode::Acrylic:
+    case BackdropMode::Tabbed:
+        break;
+    default:
+        addIssue(
+            issues,
+            "$.appearance.backdrop",
+            "backdrop must be solid, mica, acrylic, or tabbed");
+        break;
+    }
+    if (config.appearance.opacityPercent < 30
+        || config.appearance.opacityPercent > 100) {
+        addIssue(
+            issues,
+            "$.appearance.opacityPercent",
+            "opacityPercent must be between 30 and 100");
+    }
+
     if (config.activation.hotkey.modifiers.empty()) {
         addIssue(issues, "$.activation.hotkey.modifiers", "at least one modifier is required");
     }

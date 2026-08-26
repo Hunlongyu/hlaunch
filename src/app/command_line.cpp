@@ -75,6 +75,7 @@ std::expected<StartupOptions, std::wstring> parseCommandLine(
                 return std::unexpected(backdrop.error());
             }
             options.windowEffects.backdrop = *backdrop;
+            options.backdropSpecified = true;
         }
         else if (argument.starts_with(opacityPrefix)) {
             const auto opacity = parseOpacity(argument.substr(opacityPrefix.size()));
@@ -82,6 +83,7 @@ std::expected<StartupOptions, std::wstring> parseCommandLine(
                 return std::unexpected(opacity.error());
             }
             options.windowEffects.opacityPercent = *opacity;
+            options.opacitySpecified = true;
         }
         else {
             return std::unexpected(L"未知命令行参数：" + std::wstring{argument});

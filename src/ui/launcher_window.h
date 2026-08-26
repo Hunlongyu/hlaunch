@@ -54,6 +54,7 @@ public:
         DocumentChangedHandler documentChangedHandler = {},
         core::ThemeMode themeMode = core::ThemeMode::Dark);
     void setThemeMode(core::ThemeMode themeMode);
+    void setWindowEffects(const platform::windows::WindowEffects& effects);
     void setDocumentChangedHandler(DocumentChangedHandler handler);
     void setDeleteConfirmationHandler(DeleteConfirmationHandler handler);
     void setItemEditorHandler(ItemEditorHandler handler);
@@ -153,6 +154,7 @@ private:
     HWND window_{};
     UINT dpi_{96};
     bool translucentSurface_{true};
+    platform::windows::WindowEffects windowEffects_{};
     core::ThemeMode themeMode_{core::ThemeMode::Dark};
     bool searchVisible_{};
     core::ItemsDocument document_{};

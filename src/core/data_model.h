@@ -25,8 +25,17 @@ enum class ThemeMode {
     Light,
 };
 
+enum class BackdropMode {
+    Solid,
+    Mica,
+    Acrylic,
+    Tabbed,
+};
+
 struct AppearanceConfig {
     ThemeMode theme{ThemeMode::Dark};
+    BackdropMode backdrop{BackdropMode::Acrylic};
+    std::uint8_t opacityPercent{95};
 
     bool operator==(const AppearanceConfig&) const = default;
 };

@@ -9,7 +9,7 @@
 
 V1 设计契约使用 UTF-8 JSON，根对象包含整数 `schemaVersion: 1`。这已经是实现输入，不再称为草稿，但在首个公开版本发布前仍可通过 ADR 变更；当前项目尚无可迁移的已发布用户数据。领域层不依赖 Glaze；JSON 读写和持久化 DTO 只存在于基础设施适配层。
 
-当前实现状态（2026-08-26）：已建立独立 Core 模型和 Glaze DTO 适配层，支持 `config.json`、`items.json` 的内存编解码、字段/范围校验、高版本只读保护、输入规模限制和失效 item 隔离；已实现标准/便携数据目录、同目录临时文件、刷盘关闭、原子替换、单一 `.bak` 和损坏主文件回退。条目修改使用后台串行工作线程保存，尚未开始写入的多个快照合并为最新值，退出前等待最终快照提交；失败会写诊断日志并通知 UI。设置窗口切换内置深色/浅色主题时同步原子保存 `appearance.theme`，旧版缺失该对象的 schema v1 配置按深色兼容读取。未知字段尚未逐字段生成诊断，通用配置异步保存、恢复确认 UI 和跨 schema 迁移仍未实现，因此 `DATA-CONFIG-001` 仍是部分验证。
+当前实现状态（2026-08-26）：已建立独立 Core 模型和 Glaze DTO 适配层，支持 `config.json`、`items.json` 的内存编解码、字段/范围校验、高版本只读保护、输入规模限制和失效 item 隔离；已实现标准/便携数据目录、同目录临时文件、刷盘关闭、原子替换、单一 `.bak` 和损坏主文件回退。条目修改使用后台串行工作线程保存，尚未开始写入的多个快照合并为最新值，退出前等待最终快照提交；失败会写诊断日志并通知 UI。设置窗口可同步原子保存 `appearance.theme`、`appearance.backdrop` 和 `appearance.opacityPercent`，并即时刷新主窗口与搜索窗；旧版缺失 `appearance` 的 schema v1 配置按 Dark/Acrylic/95% 读取，只有 `appearance.theme` 的旧配置也使用 Acrylic/95% 补全。未知字段尚未逐字段生成诊断，通用配置异步保存、恢复确认 UI 和跨 schema 迁移仍未实现，因此 `DATA-CONFIG-001` 仍是部分验证。
 
 ## 标识、时间与条目
 
@@ -73,7 +73,9 @@ V1 设计契约使用 UTF-8 JSON，根对象包含整数 `schemaVersion: 1`。�
 {
   "schemaVersion": 1,
   "appearance": {
-    "theme": "dark"
+    "theme": "dark",
+    "backdrop": "acrylic",
+    "opacityPercent": 95
   },
   "activation": {
     "hotkey": {

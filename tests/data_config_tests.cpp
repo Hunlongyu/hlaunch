@@ -27,7 +27,9 @@ bool hasIssue(const Result& result, const JsonIssueCode code, const std::string_
 constexpr std::string_view validConfig = R"({
   "futureRoot": true,
   "appearance": {
-    "theme": "dark"
+    "theme": "dark",
+    "backdrop": "acrylic",
+    "opacityPercent": 95
   },
   "activation": {
     "screenEdge": {
@@ -84,6 +86,8 @@ TEST_CASE("DATA-CONFIG-001 config accepts unordered and unknown fields")
     REQUIRE(result.hasValue());
     CHECK(result.issues.empty());
     CHECK(result.value->appearance.theme == hlaunch::core::ThemeMode::Dark);
+    CHECK(result.value->appearance.backdrop == hlaunch::core::BackdropMode::Acrylic);
+    CHECK(result.value->appearance.opacityPercent == 95);
     CHECK(result.value->activation.hotkey.enabled);
     CHECK(result.value->activation.hotkey.key == "Space");
     CHECK(result.value->activation.hotkey.modifiers
@@ -106,6 +110,22 @@ TEST_CASE("DATA-CONFIG-001 legacy config without appearance keeps the dark theme
     REQUIRE(result.hasValue());
     CHECK(result.issues.empty());
     CHECK(result.value->appearance.theme == hlaunch::core::ThemeMode::Dark);
+    CHECK(result.value->appearance.backdrop == hlaunch::core::BackdropMode::Acrylic);
+    CHECK(result.value->appearance.opacityPercent == 95);
+}
+
+TEST_CASE("DATA-CONFIG-001 legacy appearance defaults material and opacity")
+{
+    std::string legacy{validConfig};
+    const auto backdrop = legacy.find(",\n    \"backdrop\": \"acrylic\"");
+    REQUIRE(backdrop != std::string::npos);
+    const auto opacityEnd = legacy.find("\n", legacy.find("\"opacityPercent\"", backdrop));
+    REQUIRE(opacityEnd != std::string::npos);
+    legacy.erase(backdrop, opacityEnd - backdrop);
+    const auto result = hlaunch::infrastructure::json::decodeConfig(legacy);
+    REQUIRE(result.hasValue());
+    CHECK(result.value->appearance.backdrop == hlaunch::core::BackdropMode::Acrylic);
+    CHECK(result.value->appearance.opacityPercent == 95);
 }
 
 TEST_CASE("DATA-CONFIG-001 rejects an unknown appearance theme")
@@ -118,6 +138,27 @@ TEST_CASE("DATA-CONFIG-001 rejects an unknown appearance theme")
     const auto result = hlaunch::infrastructure::json::decodeConfig(invalid);
     CHECK_FALSE(result.hasValue());
     CHECK(hasIssue(result, JsonIssueCode::Validation, "$.appearance.theme"));
+}
+
+TEST_CASE("DATA-CONFIG-001 rejects invalid appearance material and opacity")
+{
+    std::string invalidBackdrop{validConfig};
+    const auto backdrop = invalidBackdrop.find("\"backdrop\": \"acrylic\"");
+    REQUIRE(backdrop != std::string::npos);
+    invalidBackdrop.replace(backdrop, std::string{"\"backdrop\": \"acrylic\""}.size(),
+                            "\"backdrop\": \"glass\"");
+    const auto backdropResult = hlaunch::infrastructure::json::decodeConfig(invalidBackdrop);
+    CHECK_FALSE(backdropResult.hasValue());
+    CHECK(hasIssue(backdropResult, JsonIssueCode::Validation, "$.appearance.backdrop"));
+
+    std::string invalidOpacity{validConfig};
+    const auto opacity = invalidOpacity.find("\"opacityPercent\": 95");
+    REQUIRE(opacity != std::string::npos);
+    invalidOpacity.replace(opacity, std::string{"\"opacityPercent\": 95"}.size(),
+                           "\"opacityPercent\": 29");
+    const auto opacityResult = hlaunch::infrastructure::json::decodeConfig(invalidOpacity);
+    CHECK_FALSE(opacityResult.hasValue());
+    CHECK(hasIssue(opacityResult, JsonIssueCode::Validation, "$.appearance.opacityPercent"));
 }
 
 TEST_CASE("DATA-CONFIG-001 does not treat a malformed appearance as legacy config")

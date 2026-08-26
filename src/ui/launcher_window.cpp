@@ -162,6 +162,7 @@ bool LauncherWindow::create(
     launchHandler_ = std::move(launchHandler);
     documentChangedHandler_ = std::move(documentChangedHandler);
     themeMode_ = themeMode;
+    windowEffects_ = effects;
     activeTabIndex_ = 0;
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(WNDCLASSEXW);
@@ -272,6 +273,20 @@ void LauncherWindow::setThemeMode(const core::ThemeMode themeMode)
     themeMode_ = themeMode;
     applyNativeWindowTheme(window_, themeMode_);
     searchWindow_.setThemeMode(themeMode_);
+    discardDeviceResources();
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::setWindowEffects(
+    const platform::windows::WindowEffects& effects)
+{
+    if (windowEffects_ == effects) {
+        return;
+    }
+    windowEffects_ = effects;
+    translucentSurface_ = effects.backdrop != platform::windows::WindowBackdrop::Solid;
+    static_cast<void>(platform::windows::applyWindowEffects(window_, effects));
+    searchWindow_.setWindowEffects(effects);
     discardDeviceResources();
     InvalidateRect(window_, nullptr, FALSE);
 }

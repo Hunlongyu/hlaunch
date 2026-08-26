@@ -34,6 +34,7 @@ public:
         QueryChangedHandler queryChangedHandler,
         KeyHandler keyHandler);
     void setThemeMode(core::ThemeMode themeMode);
+    void setWindowEffects(const platform::windows::WindowEffects& effects);
     void show();
     void positionAttached(HWND owner, UINT dpi, const SearchPopupLayout& layout);
     void hide();
@@ -62,6 +63,7 @@ private:
     HWND window_{};
     UINT dpi_{96};
     bool translucentSurface_{true};
+    platform::windows::WindowEffects windowEffects_{};
     core::ThemeMode themeMode_{core::ThemeMode::Dark};
     SearchPopupLayout layout_{};
     std::wstring query_{};

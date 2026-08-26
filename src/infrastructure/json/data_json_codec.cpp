@@ -47,6 +47,8 @@ struct ActivationDto {
 
 struct AppearanceDto {
     std::string theme{};
+    std::optional<std::string> backdrop{};
+    std::optional<std::int64_t> opacityPercent{};
 };
 
 struct ConfigDto {
@@ -57,6 +59,16 @@ struct ConfigDto {
 
 struct LegacyConfigDto {
     std::int64_t schemaVersion{};
+    ActivationDto activation{};
+};
+
+struct LegacyAppearanceDto {
+    std::string theme{};
+};
+
+struct LegacyAppearanceConfigDto {
+    std::int64_t schemaVersion{};
+    LegacyAppearanceDto appearance{};
     ActivationDto activation{};
 };
 
@@ -374,6 +386,35 @@ std::optional<core::ApplicationConfig> configFromDto(
             "$.appearance.theme",
             "theme must be dark or light"));
     }
+    const auto backdrop = dto.appearance.backdrop.value_or("acrylic");
+    if (backdrop == "solid") {
+        config.appearance.backdrop = core::BackdropMode::Solid;
+    }
+    else if (backdrop == "mica") {
+        config.appearance.backdrop = core::BackdropMode::Mica;
+    }
+    else if (backdrop == "acrylic") {
+        config.appearance.backdrop = core::BackdropMode::Acrylic;
+    }
+    else if (backdrop == "tabbed") {
+        config.appearance.backdrop = core::BackdropMode::Tabbed;
+    }
+    else {
+        issues.push_back(makeIssue(
+            JsonIssueCode::Validation,
+            "$.appearance.backdrop",
+            "backdrop must be solid, mica, acrylic, or tabbed"));
+    }
+    const auto opacity = dto.appearance.opacityPercent.value_or(95);
+    if (opacity >= 30 && opacity <= 100) {
+        config.appearance.opacityPercent = static_cast<std::uint8_t>(opacity);
+    }
+    else {
+        issues.push_back(makeIssue(
+            JsonIssueCode::Validation,
+            "$.appearance.opacityPercent",
+            "opacityPercent must be between 30 and 100"));
+    }
     config.activation.hotkey.enabled = dto.activation.hotkey.enabled;
     config.activation.hotkey.key = dto.activation.hotkey.key;
 
@@ -464,6 +505,20 @@ ConfigDto configToDto(const core::ApplicationConfig& config)
     dto.schemaVersion = config.schemaVersion;
     dto.appearance = AppearanceDto{
         .theme = config.appearance.theme == core::ThemeMode::Light ? "light" : "dark",
+        .backdrop = [&config] {
+            switch (config.appearance.backdrop) {
+            case core::BackdropMode::Solid:
+                return "solid";
+            case core::BackdropMode::Mica:
+                return "mica";
+            case core::BackdropMode::Acrylic:
+                return "acrylic";
+            case core::BackdropMode::Tabbed:
+                return "tabbed";
+            }
+            return "acrylic";
+        }(),
+        .opacityPercent = config.appearance.opacityPercent,
     };
     dto.activation.hotkey.enabled = config.activation.hotkey.enabled;
     for (const auto modifier : config.activation.hotkey.modifiers) {
@@ -586,19 +641,37 @@ ConfigDecodeResult decodeConfig(const std::string_view input)
     ConfigDto dto{};
     if (const auto issue = parseDto(dto, input, "$")) {
         if (input.find("\"appearance\"") != std::string_view::npos) {
-            result.issues.push_back(*issue);
-            return result;
+            LegacyAppearanceConfigDto legacyAppearance{};
+            if (parseDto(legacyAppearance, input, "$")) {
+                result.issues.push_back(*issue);
+                return result;
+            }
+            dto = ConfigDto{
+                .schemaVersion = legacyAppearance.schemaVersion,
+                .appearance = AppearanceDto{
+                    .theme = std::move(legacyAppearance.appearance.theme),
+                    .backdrop = "acrylic",
+                    .opacityPercent = 95,
+                },
+                .activation = std::move(legacyAppearance.activation),
+            };
         }
-        LegacyConfigDto legacy{};
-        if (const auto legacyIssue = parseDto(legacy, input, "$")) {
-            result.issues.push_back(*issue);
-            return result;
+        else {
+            LegacyConfigDto legacy{};
+            if (parseDto(legacy, input, "$")) {
+                result.issues.push_back(*issue);
+                return result;
+            }
+            dto = ConfigDto{
+                .schemaVersion = legacy.schemaVersion,
+                .appearance = AppearanceDto{
+                    .theme = "dark",
+                    .backdrop = "acrylic",
+                    .opacityPercent = 95,
+                },
+                .activation = std::move(legacy.activation),
+            };
         }
-        dto = ConfigDto{
-            .schemaVersion = legacy.schemaVersion,
-            .appearance = AppearanceDto{.theme = "dark"},
-            .activation = std::move(legacy.activation),
-        };
     }
     if (!checkSchema(dto.schemaVersion, result)) {
         return result;

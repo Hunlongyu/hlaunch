@@ -32,11 +32,12 @@ private:
     void execute(platform::windows::ActivationCommand command);
     void launch(const core::LaunchItem& item);
     void showSettings();
-    [[nodiscard]] bool changeTheme(core::ThemeMode themeMode);
+    [[nodiscard]] bool changeAppearance(const core::AppearanceConfig& appearance);
 
     HINSTANCE instance_{};
     core::ApplicationConfig config_{};
     std::filesystem::path configFile_{};
+    platform::windows::WindowEffects windowEffects_{};
     std::optional<platform::windows::SingleInstance> singleInstance_{};
     std::optional<infrastructure::filesystem::ItemsSaveWorker> itemsSaver_{};
     ui::LauncherWindow launcher_{};

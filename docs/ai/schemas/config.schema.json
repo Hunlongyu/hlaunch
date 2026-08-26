@@ -10,7 +10,9 @@
       "type": "object",
       "required": ["theme"],
       "properties": {
-        "theme": { "enum": ["dark", "light"], "default": "dark" }
+        "theme": { "enum": ["dark", "light"], "default": "dark" },
+        "backdrop": { "enum": ["solid", "mica", "acrylic", "tabbed"], "default": "acrylic" },
+        "opacityPercent": { "type": "integer", "minimum": 30, "maximum": 100, "default": 95 }
       },
       "additionalProperties": true
     },

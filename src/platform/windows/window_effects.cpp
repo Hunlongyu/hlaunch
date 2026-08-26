@@ -33,13 +33,6 @@ WindowEffectsResult applyWindowEffects(
         return result;
     }
 
-    const BOOL darkMode = TRUE;
-    static_cast<void>(DwmSetWindowAttribute(
-        window,
-        DWMWA_USE_IMMERSIVE_DARK_MODE,
-        &darkMode,
-        sizeof(darkMode)));
-
     const DWM_WINDOW_CORNER_PREFERENCE cornerPreference = DWMWCP_ROUND;
     static_cast<void>(DwmSetWindowAttribute(
         window,
@@ -56,6 +49,10 @@ WindowEffectsResult applyWindowEffects(
 
     const auto backdrop = toSystemBackdrop(effects.backdrop);
     if (effects.backdrop == WindowBackdrop::Solid) {
+        DWM_BLURBEHIND blur{};
+        blur.dwFlags = DWM_BB_ENABLE;
+        blur.fEnable = FALSE;
+        static_cast<void>(DwmEnableBlurBehindWindow(window, &blur));
         const MARGINS margins{};
         static_cast<void>(DwmExtendFrameIntoClientArea(window, &margins));
         static_cast<void>(DwmSetWindowAttribute(
@@ -87,6 +84,21 @@ WindowEffectsResult applyWindowEffects(
         SetWindowLongPtrW(window, GWL_EXSTYLE, extendedStyle | WS_EX_LAYERED);
         const auto alpha = static_cast<BYTE>((opacity * 255U + 50U) / 100U);
         result.globalOpacityApplied = SetLayeredWindowAttributes(window, 0, alpha, LWA_ALPHA) != FALSE;
+    }
+    else {
+        const auto extendedStyle = GetWindowLongPtrW(window, GWL_EXSTYLE);
+        if ((extendedStyle & WS_EX_LAYERED) != 0) {
+            SetWindowLongPtrW(window, GWL_EXSTYLE, extendedStyle & ~WS_EX_LAYERED);
+            SetWindowPos(
+                window,
+                nullptr,
+                0,
+                0,
+                0,
+                0,
+                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                    | SWP_NOOWNERZORDER | SWP_NOZORDER);
+        }
     }
 
     return result;

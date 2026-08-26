@@ -151,14 +151,14 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
     CHECK(dark.text != light.text);
     CHECK(dark.accent != light.accent);
 
-    auto selectedTheme = hlaunch::core::ThemeMode::Dark;
+    auto selectedAppearance = hlaunch::core::AppearanceConfig{};
     hlaunch::ui::SettingsWindow settings{};
     REQUIRE(settings.show(
         GetModuleHandleW(nullptr),
         nullptr,
-        hlaunch::core::ThemeMode::Dark,
-        [&selectedTheme](const hlaunch::core::ThemeMode theme) {
-            selectedTheme = theme;
+        hlaunch::core::AppearanceConfig{},
+        [&selectedAppearance](const hlaunch::core::AppearanceConfig& appearance) {
+            selectedAppearance = appearance;
             return true;
         }));
     REQUIRE(settings.handle() != nullptr);
@@ -172,17 +172,30 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
         WM_COMMAND,
         MAKEWPARAM(2001, CBN_SELCHANGE),
         reinterpret_cast<LPARAM>(themeCombo));
-    CHECK(selectedTheme == hlaunch::core::ThemeMode::Light);
+    CHECK(selectedAppearance.theme == hlaunch::core::ThemeMode::Light);
     CHECK(SendMessageW(themeCombo, CB_GETCURSEL, 0, 0) == 1);
+
+    const auto backdropCombo = GetDlgItem(settings.handle(), 2003);
+    const auto opacityEdit = GetDlgItem(settings.handle(), 2004);
+    REQUIRE(backdropCombo != nullptr);
+    REQUIRE(opacityEdit != nullptr);
+    SendMessageW(backdropCombo, CB_SETCURSEL, 1, 0);
+    SendMessageW(settings.handle(), WM_COMMAND,
+                 MAKEWPARAM(2003, CBN_SELCHANGE),
+                 reinterpret_cast<LPARAM>(backdropCombo));
+    CHECK(selectedAppearance.backdrop == hlaunch::core::BackdropMode::Mica);
+    SetWindowTextW(opacityEdit, L"82");
+    SendMessageW(settings.handle(), WM_COMMAND, MAKEWPARAM(2005, BN_CLICKED), 0);
+    CHECK(selectedAppearance.opacityPercent == 82);
 
     settings.hide();
     CHECK_FALSE(settings.isVisible());
     REQUIRE(settings.show(
         GetModuleHandleW(nullptr),
         nullptr,
-        hlaunch::core::ThemeMode::Dark,
-        [&selectedTheme](const hlaunch::core::ThemeMode theme) {
-            selectedTheme = theme;
+        hlaunch::core::AppearanceConfig{},
+        [&selectedAppearance](const hlaunch::core::AppearanceConfig& appearance) {
+            selectedAppearance = appearance;
             return true;
         }));
     CHECK(settings.handle() == initialWindow);
@@ -220,6 +233,8 @@ TEST_CASE("UI-EFFECT-001 defaults to Acrylic with 95 percent opacity")
     CHECK(options->windowEffects.backdrop
         == hlaunch::platform::windows::WindowBackdrop::Acrylic);
     CHECK(options->windowEffects.opacityPercent == 95);
+    CHECK_FALSE(options->backdropSpecified);
+    CHECK_FALSE(options->opacitySpecified);
     CHECK_FALSE(options->showSearch);
 }
 
@@ -238,6 +253,8 @@ TEST_CASE("UI-EFFECT-001 parses every supported backdrop and window opacity")
         REQUIRE(options.has_value());
         CHECK(options->windowEffects.backdrop == expected);
         CHECK(options->windowEffects.opacityPercent == 72);
+        CHECK(options->backdropSpecified);
+        CHECK(options->opacitySpecified);
     }
 }
 
@@ -252,6 +269,28 @@ TEST_CASE("UI-EFFECT-001 rejects invisible or malformed opacity and unknown back
     CHECK_FALSE(hlaunch::app::parseCommandLine(tooHigh).has_value());
     CHECK_FALSE(hlaunch::app::parseCommandLine(malformed).has_value());
     CHECK_FALSE(hlaunch::app::parseCommandLine(unknownBackdrop).has_value());
+}
+
+TEST_CASE("UI-EFFECT-001 restores a fully opaque window after live changes")
+{
+    const auto window = CreateWindowExW(
+        0, L"STATIC", L"HLaunch effect test", WS_POPUP,
+        0, 0, 120, 120, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    REQUIRE(window != nullptr);
+
+    const auto translucent = hlaunch::platform::windows::applyWindowEffects(
+        window,
+        {.backdrop = hlaunch::platform::windows::WindowBackdrop::Acrylic,
+         .opacityPercent = 95});
+    CHECK(translucent.globalOpacityApplied);
+    CHECK((GetWindowLongPtrW(window, GWL_EXSTYLE) & WS_EX_LAYERED) != 0);
+
+    static_cast<void>(hlaunch::platform::windows::applyWindowEffects(
+        window,
+        {.backdrop = hlaunch::platform::windows::WindowBackdrop::Solid,
+         .opacityPercent = 100}));
+    CHECK((GetWindowLongPtrW(window, GWL_EXSTYLE) & WS_EX_LAYERED) == 0);
+    DestroyWindow(window);
 }
 
 TEST_CASE("PROD-GRID-001 launcher layout remains DIP based and responsive")

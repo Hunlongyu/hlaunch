@@ -92,6 +92,32 @@ std::string_view activationCommandName(
     return "unknown";
 }
 
+platform::windows::WindowEffects windowEffectsFromAppearance(
+    const core::AppearanceConfig& appearance) noexcept
+{
+    using core::BackdropMode;
+    using platform::windows::WindowBackdrop;
+    auto backdrop = WindowBackdrop::Acrylic;
+    switch (appearance.backdrop) {
+    case BackdropMode::Solid:
+        backdrop = WindowBackdrop::Solid;
+        break;
+    case BackdropMode::Mica:
+        backdrop = WindowBackdrop::Mica;
+        break;
+    case BackdropMode::Acrylic:
+        backdrop = WindowBackdrop::Acrylic;
+        break;
+    case BackdropMode::Tabbed:
+        backdrop = WindowBackdrop::Tabbed;
+        break;
+    }
+    return {
+        .backdrop = backdrop,
+        .opacityPercent = appearance.opacityPercent,
+    };
+}
+
 } // namespace
 
 int Application::run(const HINSTANCE instance, const StartupOptions& options)
@@ -187,13 +213,20 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
 
     config_ = *config->value;
     configFile_ = paths->configFile;
+    windowEffects_ = windowEffectsFromAppearance(config_.appearance);
+    if (options.backdropSpecified) {
+        windowEffects_.backdrop = options.windowEffects.backdrop;
+    }
+    if (options.opacitySpecified) {
+        windowEffects_.opacityPercent = options.windowEffects.opacityPercent;
+    }
 
     infrastructure::logging::write(
         infrastructure::logging::Level::Info,
         "launcher_window_create_started");
     if (!launcher_.create(
             instance,
-            options.windowEffects,
+            windowEffects_,
             options.showSearch,
             std::move(*items->value),
             [this](const core::LaunchItem& item) { launch(item); },
@@ -502,8 +535,10 @@ void Application::showSettings()
     if (!settings_.show(
             instance_,
             launcher_.handle(),
-            config_.appearance.theme,
-            [this](const core::ThemeMode themeMode) { return changeTheme(themeMode); })) {
+            config_.appearance,
+            [this](const core::AppearanceConfig& appearance) {
+                return changeAppearance(appearance);
+            })) {
         MessageBoxW(
             launcher_.handle(),
             L"无法创建设置窗口。",
@@ -512,33 +547,38 @@ void Application::showSettings()
     }
 }
 
-bool Application::changeTheme(const core::ThemeMode themeMode)
+bool Application::changeAppearance(const core::AppearanceConfig& appearance)
 {
-    if (config_.appearance.theme == themeMode) {
+    if (config_.appearance == appearance) {
         return true;
     }
     auto updated = config_;
-    updated.appearance.theme = themeMode;
+    updated.appearance = appearance;
     const auto saved = infrastructure::filesystem::saveConfig(configFile_, updated);
     if (!saved) {
         infrastructure::logging::writeSystemError(
             infrastructure::logging::Level::Error,
-            "config_theme_save_failed",
+            "config_appearance_save_failed",
             saved.error().systemCode);
         MessageBoxW(
             settings_.handle(),
-            L"无法保存主题设置，请检查数据目录权限或磁盘空间。",
+            L"无法保存外观设置，请检查数据目录权限或磁盘空间。",
             L"HLaunch 设置",
             MB_OK | MB_ICONERROR);
         return false;
     }
     config_ = std::move(updated);
-    launcher_.setThemeMode(themeMode);
-    settings_.setThemeMode(themeMode);
+    windowEffects_ = windowEffectsFromAppearance(config_.appearance);
+    launcher_.setThemeMode(config_.appearance.theme);
+    launcher_.setWindowEffects(windowEffects_);
+    settings_.setAppearance(config_.appearance);
     infrastructure::logging::write(
         infrastructure::logging::Level::Info,
-        themeMode == core::ThemeMode::Light ? "theme_changed value=light"
-                                            : "theme_changed value=dark");
+        "appearance_changed theme="
+            + std::string{config_.appearance.theme == core::ThemeMode::Light
+                    ? "light"
+                    : "dark"}
+            + " opacity=" + std::to_string(config_.appearance.opacityPercent));
     return true;
 }
 

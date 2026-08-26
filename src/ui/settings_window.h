@@ -10,7 +10,7 @@ namespace hlaunch::ui {
 
 class SettingsWindow final {
 public:
-    using ThemeChangedHandler = std::function<bool(core::ThemeMode)>;
+    using AppearanceChangedHandler = std::function<bool(const core::AppearanceConfig&)>;
 
     SettingsWindow() = default;
     ~SettingsWindow();
@@ -21,10 +21,10 @@ public:
     [[nodiscard]] bool show(
         HINSTANCE instance,
         HWND owner,
-        core::ThemeMode themeMode,
-        ThemeChangedHandler themeChangedHandler);
+        const core::AppearanceConfig& appearance,
+        AppearanceChangedHandler appearanceChangedHandler);
     void hide();
-    void setThemeMode(core::ThemeMode themeMode);
+    void setAppearance(const core::AppearanceConfig& appearance);
 
     [[nodiscard]] HWND handle() const noexcept;
     [[nodiscard]] bool isVisible() const noexcept;
@@ -36,11 +36,16 @@ private:
     [[nodiscard]] bool create(HINSTANCE instance, HWND owner);
     void createControls();
     void positionOverOwner(HWND owner);
+    [[nodiscard]] bool applyAppearanceFromControls(bool includeOpacity);
+    void syncControls();
 
     HWND window_{};
     HWND themeCombo_{};
-    core::ThemeMode themeMode_{core::ThemeMode::Dark};
-    ThemeChangedHandler themeChangedHandler_{};
+    HWND backdropCombo_{};
+    HWND opacityEdit_{};
+    HWND statusText_{};
+    core::AppearanceConfig appearance_{};
+    AppearanceChangedHandler appearanceChangedHandler_{};
 };
 
 } // namespace hlaunch::ui
