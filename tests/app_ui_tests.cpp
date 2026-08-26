@@ -377,11 +377,62 @@ TEST_CASE("PROD-GRID-001 launcher typing searches every tab and Enter invokes th
         SendMessageW(search, WM_CHAR, character, 0);
     }
     SendMessageW(search, WM_KEYDOWN, VK_RETURN, 0);
+    CHECK(launchedId.empty());
+    SendMessageW(search, WM_KEYDOWN, VK_DOWN, 0);
+    SendMessageW(search, WM_KEYDOWN, VK_RETURN, 0);
 
     CHECK(launchedId == "22222222-2222-4222-8222-222222222201");
 }
 
-TEST_CASE("PROD-GRID-001 Grid wheel and PageDown keep the focused item visible")
+TEST_CASE("PROD-GRID-001 selection starts empty and mouse wheel switches tabs")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {
+            hlaunch::core::Tab{
+                .id = "11111111-1111-4111-8111-111111111111",
+                .name = "First tab",
+                .items = {searchableItem("first-item", "First item")},
+            },
+            hlaunch::core::Tab{
+                .id = "22222222-2222-4222-8222-222222222222",
+                .name = "Second tab",
+                .items = {searchableItem("second-item", "Second item")},
+            },
+        },
+    };
+    std::string launchedId{};
+    hlaunch::ui::LauncherWindow launcher{};
+    REQUIRE(launcher.create(
+        GetModuleHandleW(nullptr),
+        hlaunch::platform::windows::WindowEffects{
+            .backdrop = hlaunch::platform::windows::WindowBackdrop::Solid,
+        },
+        false,
+        std::move(document),
+        [&launchedId](const hlaunch::core::LaunchItem& item) {
+            launchedId = item.id;
+        }));
+
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_RETURN, 0);
+    CHECK(launchedId.empty());
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_DOWN, 0);
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_RETURN, 0);
+    CHECK(launchedId == "first-item");
+
+    launchedId.clear();
+    SendMessageW(
+        launcher.handle(),
+        WM_MOUSEWHEEL,
+        MAKEWPARAM(0, static_cast<WORD>(-WHEEL_DELTA)),
+        0);
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_RETURN, 0);
+    CHECK(launchedId.empty());
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_DOWN, 0);
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_RETURN, 0);
+    CHECK(launchedId == "second-item");
+}
+
+TEST_CASE("PROD-GRID-001 PageDown keeps the keyboard-selected item visible")
 {
     hlaunch::core::ItemsDocument document{
         .tabs = {hlaunch::core::Tab{
@@ -408,15 +459,10 @@ TEST_CASE("PROD-GRID-001 Grid wheel and PageDown keep the focused item visible")
             launchedId = item.id;
         }));
 
-    SendMessageW(
-        launcher.handle(),
-        WM_MOUSEWHEEL,
-        MAKEWPARAM(0, static_cast<WORD>(-WHEEL_DELTA)),
-        0);
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_DOWN, 0);
     SendMessageW(launcher.handle(), WM_KEYDOWN, VK_RETURN, 0);
-    CHECK(launchedId == "item-5");
+    CHECK(launchedId == "item-0");
 
-    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_PRIOR, 0);
     SendMessageW(launcher.handle(), WM_KEYDOWN, VK_NEXT, 0);
     SendMessageW(launcher.handle(), WM_KEYDOWN, VK_RETURN, 0);
     CHECK(launchedId == "item-40");
@@ -537,6 +583,7 @@ TEST_CASE("PROD-ITEM-001 launcher adds and moves an item while preserving identi
     SendMessageW(launcher.handle(), WM_KEYDOWN, VK_INSERT, 0);
     REQUIRE(changeCount == 1U);
     REQUIRE_FALSE(firstId.empty());
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_DOWN, 0);
     SendMessageW(launcher.handle(), WM_KEYDOWN, VK_F2, 0);
 
     REQUIRE(editorCallCount == 2U);
@@ -559,6 +606,7 @@ TEST_CASE("PROD-ITEM-001 launcher adds and moves an item while preserving identi
     for (const wchar_t character : std::wstring_view{L"编辑条目"}) {
         SendMessageW(search, WM_CHAR, character, 0);
     }
+    SendMessageW(search, WM_KEYDOWN, VK_DOWN, 0);
     SendMessageW(search, WM_KEYDOWN, VK_RETURN, 0);
     CHECK(launchedId == firstId);
 }
@@ -602,6 +650,9 @@ TEST_CASE("PROD-ITEM-001 Delete removes the focused item and keeps adjacent focu
             confirmedId = item.id;
             return false;
         });
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_DELETE, 0);
+    CHECK(confirmedId.empty());
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_DOWN, 0);
     SendMessageW(launcher.handle(), WM_KEYDOWN, VK_DELETE, 0);
     CHECK(confirmedId == firstId);
     CHECK(changeCount == 0U);

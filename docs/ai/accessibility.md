@@ -1,6 +1,6 @@
 # 可访问性契约
 
-当前实现状态（2026-08-26）：Launcher 已具备 Grid/Tab 与跨分类搜索键盘路径、方向键跨页、PageUp/PageDown、Enter 启动、`Insert` 添加、`F2` 编辑、`Delete` 删除、Esc 清空/关闭和非纯颜色的条目焦点轮廓，并完成真实窗口消息验证。删除确认默认“否”，取消不改变数据，成功后焦点保持在相邻条目。条目编辑器使用原生 Win32 Controls，可通过 Tab 顺序和默认按钮操作。Launcher 的 UI Automation Provider、Narrator、Accessibility Insights、高对比度与文本缩放仍未实现或验证，因此 `UIA-001` 仅为部分验证。
+当前实现状态（2026-08-26）：Launcher 已具备 Grid/Tab 与跨分类搜索键盘路径。默认没有条目选中，首次按导航键后才显示非纯颜色的焦点轮廓，并允许 Enter 启动、`F2` 编辑或 `Delete` 删除；PageUp/PageDown、`Insert` 添加和 Esc 清空/关闭也已接入。删除确认默认“否”，取消不改变数据，成功后焦点保持在相邻条目。条目编辑器使用原生 Win32 Controls，可通过 Tab 顺序和默认按钮操作。Launcher 的 UI Automation Provider、Narrator、Accessibility Insights、高对比度与文本缩放仍未实现或验证，因此 `UIA-001` 仅为部分验证。
 
 ## 基线
 
@@ -21,7 +21,7 @@
 
 ## 视觉与输入
 
-- 颜色不是唯一状态信号；键盘焦点始终有可见轮廓。
+- 颜色不是唯一状态信号；进入键盘选中状态后，焦点始终有可见轮廓。未选中状态不能暗示首项会响应 Enter、F2 或 Delete。
 - 高对比度开启时使用系统颜色，并停用妨碍可读性的透明和背景图片。
 - 尊重系统文本缩放、DPI 和减少动画设置；动画不得阻塞命中测试或 UIA 树更新。
 - 为搜索、Tab、Grid 导航、启动、编辑、删除、设置和关闭定义稳定键盘路径。

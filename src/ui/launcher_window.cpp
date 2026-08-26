@@ -317,6 +317,7 @@ void LauncherWindow::show()
     else {
         SetFocus(window_);
     }
+    keyboardSelectionActive_ = false;
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -339,6 +340,7 @@ void LauncherWindow::showAtScreenEdge(const activation::ScreenEdgeHit& hit)
     else {
         SetFocus(window_);
     }
+    keyboardSelectionActive_ = false;
     InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -427,6 +429,7 @@ void LauncherWindow::hide()
     pageOffset_ = 0;
     wheelDeltaRemainder_ = 0;
     focusedItemIndex_ = 0;
+    keyboardSelectionActive_ = false;
     searchWindow_.setQuery({});
     searchWindow_.hide();
     ShowWindow(window_, SW_HIDE);
@@ -563,9 +566,7 @@ LRESULT LauncherWindow::handleMessage(
         }
         return 0;
     case WM_MOUSEWHEEL:
-        handleMouseWheel(
-            GET_WHEEL_DELTA_WPARAM(wParam),
-            POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
+        handleMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
         return 0;
     case WM_LBUTTONDOWN: {
         if (isSearchFiltering()) {
@@ -714,6 +715,7 @@ LRESULT LauncherWindow::handleMessage(
             if (const auto displayed = displayedItem(absoluteIndex);
                 displayed && displayed->item && launchHandler_) {
                 focusedItemIndex_ = absoluteIndex;
+                keyboardSelectionActive_ = false;
                 SetFocus(window_);
                 InvalidateRect(window_, nullptr, FALSE);
                 launchHandler_(*displayed->item);
@@ -1188,7 +1190,8 @@ void LauncherWindow::render()
                 3.0F);
         }
         const bool keyboardFocused = windowFocused_ || GetFocus() == searchWindow_.handle();
-        if (!emptySlot && keyboardFocused && absoluteIndex == focusedItemIndex_) {
+        if (!emptySlot && keyboardSelectionActive_ && keyboardFocused
+            && absoluteIndex == focusedItemIndex_) {
             const auto focusBounds = D2D1::RectF(
                 tile.left + 2.0F,
                 tile.top + 2.0F,
@@ -1324,11 +1327,11 @@ bool LauncherWindow::handleKeyDown(const WPARAM key)
         showAddEditor();
         return true;
     }
-    if (key == VK_F2 && totalItemCount() > 0) {
+    if (key == VK_F2 && keyboardSelectionActive_ && totalItemCount() > 0) {
         showEditEditor(focusedItemIndex_);
         return true;
     }
-    if (key == VK_DELETE && totalItemCount() > 0) {
+    if (key == VK_DELETE && keyboardSelectionActive_ && totalItemCount() > 0) {
         deleteItem(focusedItemIndex_);
         return true;
     }
@@ -1341,7 +1344,9 @@ bool LauncherWindow::handleKeyDown(const WPARAM key)
         return true;
     }
     if (key == VK_RETURN) {
-        activateFocusedItem();
+        if (keyboardSelectionActive_) {
+            activateFocusedItem();
+        }
         return true;
     }
     if (key == VK_TAB) {
@@ -1358,6 +1363,7 @@ bool LauncherWindow::handleKeyDown(const WPARAM key)
     const auto capacity = pageCapacity();
     if (key == VK_PRIOR || key == VK_NEXT) {
         if (itemCount > 0 && capacity > 0) {
+            keyboardSelectionActive_ = true;
             if (key == VK_PRIOR) {
                 focusedItemIndex_ = focusedItemIndex_ > capacity
                     ? focusedItemIndex_ - capacity
@@ -1375,6 +1381,7 @@ bool LauncherWindow::handleKeyDown(const WPARAM key)
     }
     if (key == VK_HOME || key == VK_END) {
         if (const auto visibleCount = visibleItemCount(); visibleCount > 0) {
+            keyboardSelectionActive_ = true;
             focusedItemIndex_ = key == VK_HOME
                 ? pageOffset_
                 : pageOffset_ + visibleCount - 1U;
@@ -1399,6 +1406,16 @@ bool LauncherWindow::handleKeyDown(const WPARAM key)
         break;
     default:
         return false;
+    }
+
+    if (!keyboardSelectionActive_) {
+        if (itemCount > 0) {
+            keyboardSelectionActive_ = true;
+            focusedItemIndex_ = pageOffset_;
+            ensureFocusedItemVisible();
+            InvalidateRect(window_, nullptr, FALSE);
+        }
+        return true;
     }
 
     RECT client{};
@@ -1436,7 +1453,9 @@ bool LauncherWindow::handleSearchKeyDown(const WPARAM key)
         return true;
     }
     if (key == VK_RETURN) {
-        activateFocusedItem();
+        if (keyboardSelectionActive_) {
+            activateFocusedItem();
+        }
         return true;
     }
     if (key == VK_TAB) {
@@ -1471,12 +1490,13 @@ void LauncherWindow::updateSearch(const std::wstring_view query)
         }
     }
     focusedItemIndex_ = 0;
+    keyboardSelectionActive_ = false;
     pageOffset_ = 0;
     wheelDeltaRemainder_ = 0;
     InvalidateRect(window_, nullptr, FALSE);
 }
 
-void LauncherWindow::handleMouseWheel(const short delta, POINT screenPoint)
+void LauncherWindow::handleMouseWheel(const short delta)
 {
     wheelDeltaRemainder_ += delta;
     const int steps = wheelDeltaRemainder_ / WHEEL_DELTA;
@@ -1485,68 +1505,19 @@ void LauncherWindow::handleMouseWheel(const short delta, POINT screenPoint)
         return;
     }
 
-    ScreenToClient(window_, &screenPoint);
-    RECT client{};
-    GetClientRect(window_, &client);
-    const float widthDip = static_cast<float>(client.right - client.left) * 96.0F
-        / static_cast<float>(dpi_);
-    const float heightDip = static_cast<float>(client.bottom - client.top) * 96.0F
-        / static_cast<float>(dpi_);
-    const float xDip = static_cast<float>(screenPoint.x) * 96.0F / static_cast<float>(dpi_);
-    const float yDip = static_cast<float>(screenPoint.y) * 96.0F / static_cast<float>(dpi_);
-    const auto layout = calculateLauncherLayout({
-        .clientWidthDip = widthDip,
-        .clientHeightDip = heightDip,
-        .itemCount = displayedTileCount(),
-    });
-    const auto contains = [xDip, yDip](const RectDip& rectangle) {
-        return xDip >= rectangle.x && xDip < rectangle.x + rectangle.width
-            && yDip >= rectangle.y && yDip < rectangle.y + rectangle.height;
-    };
-    if (!isSearchFiltering() && document_.tabs.size() > 1U
-        && (contains(layout.header) || contains(layout.tabs))) {
-        const int direction = steps > 0 ? -1 : 1;
-        std::size_t target = activeTabIndex_;
-        for (int count = 0; count < std::abs(steps); ++count) {
-            const auto next = cycleLauncherTab(
-                target, document_.tabs.size(), direction < 0);
-            if (next) {
-                target = *next;
-            }
-        }
-        changeActiveTab(target);
+    if (isSearchFiltering() || document_.tabs.size() <= 1U) {
         return;
     }
 
-    const auto capacity = pageCapacity();
-    if (capacity == 0 || totalItemCount() <= capacity) {
-        return;
-    }
-
-    const auto gridLayout = calculateLauncherLayout({
-        .clientWidthDip = widthDip,
-        .clientHeightDip = heightDip,
-        .itemCount = 0,
-    });
-    const auto rowSize = std::min(gridLayout.columns, capacity);
-    const auto rowDistance = static_cast<std::ptrdiff_t>(rowSize)
-        * static_cast<std::ptrdiff_t>(-steps);
-    const auto requestedOffset = static_cast<std::ptrdiff_t>(pageOffset_) + rowDistance;
-    pageOffset_ = static_cast<std::size_t>(std::clamp<std::ptrdiff_t>(
-        requestedOffset,
-        0,
-        static_cast<std::ptrdiff_t>(maximumPageOffset())));
-
-    const auto visibleCount = visibleItemCount();
-    if (visibleCount > 0) {
-        if (focusedItemIndex_ < pageOffset_) {
-            focusedItemIndex_ = pageOffset_;
-        }
-        else if (focusedItemIndex_ >= pageOffset_ + visibleCount) {
-            focusedItemIndex_ = pageOffset_ + visibleCount - 1U;
+    const int direction = steps > 0 ? -1 : 1;
+    std::size_t target = activeTabIndex_;
+    for (int count = 0; count < std::abs(steps); ++count) {
+        if (const auto next = cycleLauncherTab(
+                target, document_.tabs.size(), direction < 0)) {
+            target = *next;
         }
     }
-    InvalidateRect(window_, nullptr, FALSE);
+    changeActiveTab(target);
 }
 
 void LauncherWindow::showAddEditor()
@@ -1635,6 +1606,7 @@ void LauncherWindow::showItemContextMenu(
         return;
     }
     focusedItemIndex_ = absoluteIndex;
+    keyboardSelectionActive_ = false;
     ensureFocusedItemVisible();
     SetFocus(window_);
     InvalidateRect(window_, nullptr, FALSE);
@@ -2265,6 +2237,7 @@ void LauncherWindow::changeActiveTab(const std::size_t tabIndex)
     }
     activeTabIndex_ = tabIndex;
     focusedItemIndex_ = 0;
+    keyboardSelectionActive_ = false;
     pageOffset_ = 0;
     wheelDeltaRemainder_ = 0;
     InvalidateRect(window_, nullptr, FALSE);

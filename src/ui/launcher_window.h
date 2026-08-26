@@ -82,7 +82,7 @@ private:
     [[nodiscard]] bool handleSearchKeyDown(WPARAM key);
     void beginSearch(std::wstring_view initialText = {});
     void updateSearch(std::wstring_view query);
-    void handleMouseWheel(short delta, POINT screenPoint);
+    void handleMouseWheel(short delta);
     void showAddEditor();
     void showEditEditor(std::size_t absoluteIndex);
     void showItemContextMenu(std::size_t absoluteIndex, POINT screenPoint);
@@ -160,6 +160,7 @@ private:
     std::vector<core::SearchResult> searchResults_{};
     std::size_t activeTabIndex_{};
     std::size_t focusedItemIndex_{};
+    bool keyboardSelectionActive_{};
     std::size_t pageOffset_{};
     int wheelDeltaRemainder_{};
     bool windowFocused_{};
