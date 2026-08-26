@@ -29,6 +29,14 @@ add_library(hlaunch_project_options INTERFACE)
 add_library(HLaunch::ProjectOptions ALIAS hlaunch_project_options)
 
 target_compile_features(hlaunch_project_options INTERFACE cxx_std_23)
+target_compile_definitions(
+    hlaunch_project_options
+    INTERFACE
+        NOMINMAX
+        UNICODE
+        _UNICODE
+        WIN32_LEAN_AND_MEAN
+)
 
 if(MSVC)
     target_compile_options(
@@ -50,6 +58,8 @@ target_link_libraries(
         WIL::WIL
         glaze::glaze
 )
+
+add_subdirectory(src)
 
 if(BUILD_TESTING)
     add_subdirectory(tests)

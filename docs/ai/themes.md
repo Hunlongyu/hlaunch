@@ -27,6 +27,8 @@ Themes/Dark/
 - DirectWrite 负责 Unicode 文本与字体 fallback。
 - WIC 负责图片解码；解码结果在后台准备，设备相关 bitmap 在渲染线程创建。
 - DWM 效果按系统能力检测，不假定所有兼容 Windows 版本支持同一属性。
+- 窗口材质与主题颜色分离：主题的 ARGB alpha 只控制背景、搜索框、卡片等表面；Solid、Mica、Acrylic、Tabbed 由 Platform 层请求 DWM。
+- 文字、图标关键笔画和焦点指示默认保持不透明。透明表面必须保留可读性，不能为追求玻璃感降低必要对比度。
 - Device lost 后从领域数据和解码缓存重建设备资源。
 
 ## V1 令牌

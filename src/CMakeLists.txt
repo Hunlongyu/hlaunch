@@ -1,0 +1,175 @@
+add_library(
+    hlaunch_core
+    STATIC
+        core/data_model.h
+        core/data_validation.cpp
+        core/data_validation.h
+)
+add_library(HLaunch::Core ALIAS hlaunch_core)
+
+target_include_directories(
+    hlaunch_core
+    PUBLIC
+        "${PROJECT_SOURCE_DIR}/src"
+)
+target_link_libraries(
+    hlaunch_core
+    PUBLIC
+        HLaunch::ProjectOptions
+)
+
+add_library(
+    hlaunch_infrastructure_json
+    STATIC
+        infrastructure/json/data_json_codec.cpp
+        infrastructure/json/data_json_codec.h
+)
+add_library(HLaunch::InfrastructureJson ALIAS hlaunch_infrastructure_json)
+
+target_include_directories(
+    hlaunch_infrastructure_json
+    PUBLIC
+        "${PROJECT_SOURCE_DIR}/src"
+)
+target_link_libraries(
+    hlaunch_infrastructure_json
+    PUBLIC
+        HLaunch::Core
+    PRIVATE
+        HLaunch::Dependencies
+        HLaunch::ProjectOptions
+)
+
+add_library(
+    hlaunch_infrastructure_storage
+    STATIC
+        infrastructure/filesystem/atomic_file.cpp
+        infrastructure/filesystem/atomic_file.h
+        infrastructure/filesystem/data_paths.cpp
+        infrastructure/filesystem/data_paths.h
+        infrastructure/filesystem/data_store.cpp
+        infrastructure/filesystem/data_store.h
+)
+add_library(HLaunch::InfrastructureStorage ALIAS hlaunch_infrastructure_storage)
+
+target_include_directories(
+    hlaunch_infrastructure_storage
+    PUBLIC
+        "${PROJECT_SOURCE_DIR}/src"
+)
+target_link_libraries(
+    hlaunch_infrastructure_storage
+    PUBLIC
+        HLaunch::Core
+        HLaunch::InfrastructureJson
+    PRIVATE
+        HLaunch::Dependencies
+        HLaunch::ProjectOptions
+        shell32
+)
+
+add_library(
+    hlaunch_platform_windows
+    STATIC
+        platform/windows/activation_command.h
+        platform/windows/single_instance.cpp
+        platform/windows/single_instance.h
+        platform/windows/window_effects.cpp
+        platform/windows/window_effects.h
+)
+add_library(HLaunch::PlatformWindows ALIAS hlaunch_platform_windows)
+
+target_include_directories(
+    hlaunch_platform_windows
+    PUBLIC
+        "${PROJECT_SOURCE_DIR}/src"
+)
+target_link_libraries(
+    hlaunch_platform_windows
+    PUBLIC
+        HLaunch::Dependencies
+    PRIVATE
+        HLaunch::ProjectOptions
+        advapi32
+        dwmapi
+        user32
+)
+
+add_library(
+    hlaunch_ui
+    STATIC
+        ui/launcher_layout.cpp
+        ui/launcher_layout.h
+        ui/launcher_window.cpp
+        ui/launcher_window.h
+        ui/search_window.cpp
+        ui/search_window.h
+)
+add_library(HLaunch::UI ALIAS hlaunch_ui)
+
+target_include_directories(
+    hlaunch_ui
+    PUBLIC
+        "${PROJECT_SOURCE_DIR}/src"
+)
+target_link_libraries(
+    hlaunch_ui
+    PUBLIC
+        HLaunch::Core
+        HLaunch::PlatformWindows
+    PRIVATE
+        HLaunch::Dependencies
+        HLaunch::ProjectOptions
+        d2d1
+        dwrite
+        user32
+)
+
+add_library(
+    hlaunch_app_support
+    STATIC
+        app/command_line.cpp
+        app/command_line.h
+)
+add_library(HLaunch::AppSupport ALIAS hlaunch_app_support)
+
+target_include_directories(
+    hlaunch_app_support
+    PUBLIC
+        "${PROJECT_SOURCE_DIR}/src"
+)
+target_link_libraries(
+    hlaunch_app_support
+    PUBLIC
+        HLaunch::PlatformWindows
+    PRIVATE
+        HLaunch::ProjectOptions
+)
+
+add_executable(
+    hlaunch
+    WIN32
+        app/application.cpp
+        app/application.h
+        app/main.cpp
+        "${PROJECT_SOURCE_DIR}/resources/windows/HLaunch.manifest"
+)
+set_target_properties(hlaunch PROPERTIES OUTPUT_NAME HLaunch)
+
+target_include_directories(
+    hlaunch
+    PRIVATE
+        "${PROJECT_SOURCE_DIR}/src"
+)
+target_link_libraries(
+    hlaunch
+    PRIVATE
+        HLaunch::AppSupport
+        HLaunch::InfrastructureStorage
+        HLaunch::PlatformWindows
+        HLaunch::ProjectOptions
+        HLaunch::UI
+        ole32
+        shell32
+        user32
+)

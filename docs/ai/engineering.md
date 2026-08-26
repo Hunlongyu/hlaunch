@@ -49,6 +49,13 @@ Glaze 仅能出现在 `infrastructure/json` 适配层。持久化 DTO 与领域�
 
 新增依赖需要说明：Windows SDK 是否已有能力、自己实现的风险、维护成本、静态链接能力、运行时影响、许可证和二进制体积。依赖必须由适配层隔离。
 
+## 窗口效果
+
+- Platform 层封装 DWM 背景材质、边框颜色、圆角和窗口整体透明度，UI 层只选择效果并渲染透明表面。
+- 使用 Windows SDK 的 `DWMWA_SYSTEMBACKDROP_TYPE`、`DwmExtendFrameIntoClientArea` 和 `DwmEnableBlurBehindWindow`；不使用未公开的 `SetWindowCompositionAttribute`。
+- 请求的材质不可用时按 DWM 系统背景 > 系统模糊 > 半透明主题表面的顺序降级，任何一级失败都不能阻止窗口显示。
+- Direct2D 透明窗口使用 BGRA premultiplied alpha；文字与关键状态色保持完整 alpha。
+
 ## 明确不引入
 
 V1 不使用 Qt、WinUI 3、Windows App SDK、WTL、ATL、WRL、Boost、TBB、libuv、SQLite、libcurl、OpenSSL、WebView2、.NET 或脚本运行时。WTL 不是永久禁止；若未来设置页大量采用原生控件，可作为新决策重新评估。

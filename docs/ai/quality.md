@@ -4,7 +4,7 @@
 
 必须区分：静态检查、编译、单元测试、集成测试、运行验证、性能测量和多设备/多显示器验证。完成较低等级不能宣称较高等级已通过。
 
-当前只完成了 CMake FetchContent 依赖集成验证：MSVC x64 Debug 可编译，依赖 smoke test 可运行。产品功能尚无实现验证。
+当前验证证据（2026-08-26）：MSVC x64 Debug 的 4 个 CTest 目标全部通过，覆盖依赖 smoke、10 个内存编解码/校验用例、5 个存储/故障保护用例和 10 个应用壳/布局/窗口效果/拖拽命中用例；同一用户及完整性级别下完成双实例 hide/show 转发运行检查。Debug 默认启动只有 1 个可见窗口；`--show-search` 启动有 2 个可见窗口，主窗为 420 × 640、附属搜索窗为 420 × 60，水平偏移 0、垂直间隔 6，移动主窗后附属窗仍保持对齐。运行截图确认搜索窗位于主窗口下方且 Grid 未位移；正式搜索触发交互尚未实现。Release 真实窗口的标题、外边距和区间空白返回 `HTCAPTION`，Grid、Tab 和关闭按钮返回 `HTCLIENT`，命中探测符合契约。Release 版的 Solid、Mica、Acrylic、Tabbed 均完成窗口创建和消息响应检查，`DwmGetWindowAttribute(DWMWA_SYSTEMBACKDROP_TYPE)` 分别返回 1、2、3、4 且成功；尚未取得四种透明材质的可靠对比截图，因此不宣称材质视觉验收完成。先前 MSVC x64 Release 编译通过，`dumpbin /dependents` 只列出 Windows 系统 DLL；本次宽度调整只完成 Debug 增量构建与运行验证。clang-tidy 的 analyzer、bugprone 和 performance 检查无项目代码诊断。尚无键盘交互、UI Automation、Shell、拖放、快捷键、边缘或多显示器运行验证。
 
 ## 单元测试
 
@@ -23,6 +23,7 @@
 - 单屏、左右双屏、上下双屏、L 形、负坐标和动态插拔。
 - 全屏窗口、无边框游戏、视频、远程桌面和任务栏不同位置。
 - Explorer 重启、会话锁定/恢复、休眠恢复和系统主题变化。
+- Solid、Mica、Acrylic、Tabbed 和整体透明度边界值；关闭系统透明效果、高对比度及不支持系统背景的 Windows 降级路径。
 - 快捷键冲突、第二实例、不同完整性级别与开机启动路径含空格。
 - 配置只读、磁盘满、主题损坏、目标不存在和 UAC 取消。
 
