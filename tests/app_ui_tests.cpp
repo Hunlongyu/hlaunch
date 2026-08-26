@@ -211,7 +211,7 @@ TEST_CASE("PLAT-SINGLE-001 command line rejects unknown options")
     CHECK_FALSE(hlaunch::app::parseCommandLine(arguments).has_value());
 }
 
-TEST_CASE("UI-EFFECT-001 defaults to Acrylic with fully opaque window")
+TEST_CASE("UI-EFFECT-001 defaults to Acrylic with 95 percent opacity")
 {
     constexpr std::array<std::wstring_view, 0> arguments{};
     const auto options = hlaunch::app::parseCommandLine(arguments);
@@ -219,7 +219,7 @@ TEST_CASE("UI-EFFECT-001 defaults to Acrylic with fully opaque window")
     REQUIRE(options.has_value());
     CHECK(options->windowEffects.backdrop
         == hlaunch::platform::windows::WindowBackdrop::Acrylic);
-    CHECK(options->windowEffects.opacityPercent == 100);
+    CHECK(options->windowEffects.opacityPercent == 95);
     CHECK_FALSE(options->showSearch);
 }
 

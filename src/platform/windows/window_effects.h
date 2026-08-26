@@ -15,7 +15,7 @@ enum class WindowBackdrop : std::uint8_t {
 
 struct WindowEffects {
     WindowBackdrop backdrop{WindowBackdrop::Acrylic};
-    std::uint8_t opacityPercent{100};
+    std::uint8_t opacityPercent{95};
 };
 
 struct WindowEffectsResult {
