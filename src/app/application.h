@@ -4,6 +4,7 @@
 #include "platform/windows/global_hotkey.h"
 #include "platform/windows/screen_edge_activation.h"
 #include "platform/windows/single_instance.h"
+#include "platform/windows/tray_icon.h"
 #include "ui/launcher_window.h"
 
 #include <Windows.h>
@@ -31,6 +32,7 @@ private:
     HWND activationWindow_{};
     platform::windows::GlobalHotkey hotkey_{};
     platform::windows::ScreenEdgeActivation screenEdge_{};
+    platform::windows::TrayIcon trayIcon_{};
 };
 
 } // namespace hlaunch::app

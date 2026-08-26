@@ -106,6 +106,9 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
             .launcherWindow = launcher_.handle(),
         },
         config->value->activation.screenEdge);
+    const bool trayStarted = trayIcon_.start(
+        activationWindow_,
+        LoadIconW(nullptr, IDI_APPLICATION));
 
     if (options.activation) {
         execute(*options.activation);
@@ -123,6 +126,13 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
             launcher_.handle(),
             L"无法启动屏幕边缘唤起。该功能已保持关闭，请检查显示器状态后重新启动 HLaunch。",
             L"HLaunch 屏幕边缘",
+            MB_OK | MB_ICONWARNING);
+    }
+    if (!trayStarted) {
+        MessageBoxW(
+            launcher_.handle(),
+            L"无法创建托盘图标。快捷键仍可使用；请重新启动 Explorer 或 HLaunch 后重试。",
+            L"HLaunch 托盘",
             MB_OK | MB_ICONWARNING);
     }
 
@@ -207,6 +217,21 @@ LRESULT Application::handleActivationMessage(
     if ((message == WM_DISPLAYCHANGE || message == WM_SETTINGCHANGE)
         && screenEdge_.isRunning()) {
         screenEdge_.refreshMonitors();
+    }
+    if (const auto trayCommand = trayIcon_.handleMessage(
+            message,
+            wParam,
+            lParam,
+            launcher_.isVisible())) {
+        switch (*trayCommand) {
+        case platform::windows::TrayCommand::ToggleLauncher:
+            launcher_.toggle();
+            break;
+        case platform::windows::TrayCommand::Exit:
+            launcher_.close();
+            break;
+        }
+        return 0;
     }
     return DefWindowProcW(activationWindow_, message, wParam, lParam);
 }

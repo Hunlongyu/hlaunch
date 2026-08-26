@@ -72,3 +72,15 @@ target_link_libraries(
 )
 
 add_test(NAME ACT-EDGE-001.state-and-layout COMMAND hlaunch_screen_edge_tests)
+
+add_executable(hlaunch_tray_icon_tests tray_icon_tests.cpp)
+
+target_link_libraries(
+    hlaunch_tray_icon_tests
+    PRIVATE
+        HLaunch::PlatformWindows
+        HLaunch::ProjectOptions
+        doctest::doctest
+)
+
+add_test(NAME PLAT-TRAY-001.lifecycle COMMAND hlaunch_tray_icon_tests)

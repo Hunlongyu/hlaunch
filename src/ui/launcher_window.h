@@ -29,6 +29,7 @@ public:
     void showAtScreenEdge(const activation::ScreenEdgeHit& hit);
     void hide();
     void toggle();
+    void close();
 
     [[nodiscard]] HWND handle() const noexcept;
     [[nodiscard]] bool isVisible() const noexcept;

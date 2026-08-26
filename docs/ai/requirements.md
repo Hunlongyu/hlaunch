@@ -11,6 +11,7 @@
 | ACT-EDGE-001 | 边缘默认关闭，启用后 Show only | `activation-edge.md` | 状态机单元 + 多显示器运行验证 | 部分验证（2026-08-26：热区/状态机/多屏几何单元测试、线程池左外边缘 Show-only 与重武装 Debug 运行验证；完整多屏、全屏应用与性能矩阵未完成） |
 | DATA-CONFIG-001 | schema v1、校验、迁移与原子写入 | `data-and-config.md`、`schemas/` | 配置语料 + 故障注入集成测试 | 部分验证（2026-08-26：memory-codec + storage 故障保护；迁移与异步保存未完成） |
 | PLAT-SINGLE-001 | Mutex 所有权与隐藏窗口激活 | `windows-integration.md` | 双实例 + 完整性级别运行验证 | 部分验证（2026-08-26：同级双实例 hide/show 运行通过；UIPI 矩阵未验证） |
+| PLAT-TRAY-001 | 托盘显示/隐藏、设置、退出与 Explorer 恢复 | `windows-integration.md` | 生命周期集成测试 + Explorer 运行验证 | 部分验证（2026-08-26：真实图标矩形、选择回调 Toggle 和生命周期测试通过；设置页、菜单人工操作与 Explorer 重启验证未完成） |
 | UIA-001 | 键盘和 UI Automation 可操作 | `accessibility.md` | Narrator + Accessibility Insights | 计划 |
 | BUILD-DEPS-001 | 依赖固定 commit 且只进入允许目标 | `engineering.md` | MSVC Configure/Build/CTest + cache 检查 | 已验证（2026-08-20 Debug） |
 | RELEASE-001 | x64 `/MT` 单 EXE、无第三方运行时 DLL | `engineering.md`、`quality.md` | 干净 Release 构建 + 二进制依赖检查 | 部分验证（2026-08-26：Release 编译 + 仅系统 DLL；干净发布演练未完成） |

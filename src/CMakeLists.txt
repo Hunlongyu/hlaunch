@@ -100,6 +100,8 @@ add_library(
         platform/windows/screen_edge_activation.h
         platform/windows/single_instance.cpp
         platform/windows/single_instance.h
+        platform/windows/tray_icon.cpp
+        platform/windows/tray_icon.h
         platform/windows/window_effects.cpp
         platform/windows/window_effects.h
 )
@@ -120,6 +122,7 @@ target_link_libraries(
         advapi32
         dwmapi
         shcore
+        shell32
         user32
 )
 

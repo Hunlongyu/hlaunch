@@ -241,6 +241,13 @@ void LauncherWindow::toggle()
     }
 }
 
+void LauncherWindow::close()
+{
+    if (window_) {
+        DestroyWindow(window_);
+    }
+}
+
 HWND LauncherWindow::handle() const noexcept
 {
     return window_;
