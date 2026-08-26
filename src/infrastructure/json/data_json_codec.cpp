@@ -45,7 +45,17 @@ struct ActivationDto {
     ScreenEdgeDto screenEdge{};
 };
 
+struct AppearanceDto {
+    std::string theme{};
+};
+
 struct ConfigDto {
+    std::int64_t schemaVersion{};
+    AppearanceDto appearance{};
+    ActivationDto activation{};
+};
+
+struct LegacyConfigDto {
     std::int64_t schemaVersion{};
     ActivationDto activation{};
 };
@@ -352,6 +362,18 @@ std::optional<core::ApplicationConfig> configFromDto(
 {
     core::ApplicationConfig config{};
     config.schemaVersion = static_cast<std::uint32_t>(dto.schemaVersion);
+    if (dto.appearance.theme == "dark") {
+        config.appearance.theme = core::ThemeMode::Dark;
+    }
+    else if (dto.appearance.theme == "light") {
+        config.appearance.theme = core::ThemeMode::Light;
+    }
+    else {
+        issues.push_back(makeIssue(
+            JsonIssueCode::Validation,
+            "$.appearance.theme",
+            "theme must be dark or light"));
+    }
     config.activation.hotkey.enabled = dto.activation.hotkey.enabled;
     config.activation.hotkey.key = dto.activation.hotkey.key;
 
@@ -440,6 +462,9 @@ ConfigDto configToDto(const core::ApplicationConfig& config)
 {
     ConfigDto dto{};
     dto.schemaVersion = config.schemaVersion;
+    dto.appearance = AppearanceDto{
+        .theme = config.appearance.theme == core::ThemeMode::Light ? "light" : "dark",
+    };
     dto.activation.hotkey.enabled = config.activation.hotkey.enabled;
     for (const auto modifier : config.activation.hotkey.modifiers) {
         dto.activation.hotkey.modifiers.emplace_back(hotkeyModifierToString(modifier));
@@ -560,8 +585,20 @@ ConfigDecodeResult decodeConfig(const std::string_view input)
 
     ConfigDto dto{};
     if (const auto issue = parseDto(dto, input, "$")) {
-        result.issues.push_back(*issue);
-        return result;
+        if (input.find("\"appearance\"") != std::string_view::npos) {
+            result.issues.push_back(*issue);
+            return result;
+        }
+        LegacyConfigDto legacy{};
+        if (const auto legacyIssue = parseDto(legacy, input, "$")) {
+            result.issues.push_back(*issue);
+            return result;
+        }
+        dto = ConfigDto{
+            .schemaVersion = legacy.schemaVersion,
+            .appearance = AppearanceDto{.theme = "dark"},
+            .activation = std::move(legacy.activation),
+        };
     }
     if (!checkSchema(dto.schemaVersion, result)) {
         return result;

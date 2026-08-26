@@ -7,6 +7,7 @@
 #include "ui/item_context_menu.h"
 #include "ui/item_editor_dialog.h"
 #include "ui/launcher_layout.h"
+#include "ui/theme.h"
 
 #include <d2d1helper.h>
 #include <windowsx.h>
@@ -129,12 +130,14 @@ bool LauncherWindow::create(
     const bool showSearch,
     core::ItemsDocument document,
     LaunchHandler launchHandler,
-    DocumentChangedHandler documentChangedHandler)
+    DocumentChangedHandler documentChangedHandler,
+    const core::ThemeMode themeMode)
 {
     document_ = std::move(document);
     rebuildSearchIndex();
     launchHandler_ = std::move(launchHandler);
     documentChangedHandler_ = std::move(documentChangedHandler);
+    themeMode_ = themeMode;
     activeTabIndex_ = 0;
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(WNDCLASSEXW);
@@ -173,10 +176,12 @@ bool LauncherWindow::create(
 
     translucentSurface_ = effects.backdrop != platform::windows::WindowBackdrop::Solid;
     static_cast<void>(platform::windows::applyWindowEffects(window_, effects));
+    applyNativeWindowTheme(window_, themeMode_);
     if (!searchWindow_.create(
             instance,
             window_,
             effects,
+            themeMode_,
             [this](const std::wstring_view query) { updateSearch(query); },
             [this](const WPARAM key) { return handleSearchKeyDown(key); })) {
         return false;
@@ -233,6 +238,18 @@ bool LauncherWindow::create(
     }
     searchVisible_ = showSearch;
     return true;
+}
+
+void LauncherWindow::setThemeMode(const core::ThemeMode themeMode)
+{
+    if (themeMode_ == themeMode) {
+        return;
+    }
+    themeMode_ = themeMode;
+    applyNativeWindowTheme(window_, themeMode_);
+    searchWindow_.setThemeMode(themeMode_);
+    discardDeviceResources();
+    InvalidateRect(window_, nullptr, FALSE);
 }
 
 void LauncherWindow::setDocumentChangedHandler(DocumentChangedHandler handler)
@@ -817,18 +834,20 @@ bool LauncherWindow::createDeviceResources()
         return false;
     }
 
+    const auto& palette = paletteFor(themeMode_);
+    const bool light = themeMode_ == core::ThemeMode::Light;
     const struct BrushDefinition {
         std::uint32_t color;
         float opacity;
         winrt::com_ptr<ID2D1SolidColorBrush>* destination;
     } brushes[]{
-        {0x0B1120, translucentSurface_ ? 0.64F : 1.0F, &backgroundBrush_},
-        {0x121B2D, translucentSurface_ ? 0.78F : 1.0F, &surfaceBrush_},
-        {0x18243A, translucentSurface_ ? 0.84F : 1.0F, &elevatedBrush_},
-        {0x2DD4BF, 1.0F, &accentBrush_},
-        {0xF8FAFC, 1.0F, &textBrush_},
-        {0x94A3B8, 1.0F, &mutedTextBrush_},
-        {0x52627D, translucentSurface_ ? 0.58F : 1.0F, &borderBrush_},
+        {palette.background, translucentSurface_ ? (light ? 0.88F : 0.64F) : 1.0F, &backgroundBrush_},
+        {palette.surface, translucentSurface_ ? (light ? 0.92F : 0.78F) : 1.0F, &surfaceBrush_},
+        {palette.elevated, translucentSurface_ ? (light ? 0.96F : 0.84F) : 1.0F, &elevatedBrush_},
+        {palette.accent, 1.0F, &accentBrush_},
+        {palette.text, 1.0F, &textBrush_},
+        {palette.textMuted, 1.0F, &mutedTextBrush_},
+        {palette.border, translucentSurface_ ? (light ? 0.90F : 0.58F) : 1.0F, &borderBrush_},
     };
     for (const auto& brush : brushes) {
         if (FAILED(renderTarget_->CreateSolidColorBrush(
@@ -896,9 +915,10 @@ void LauncherWindow::render()
     });
 
     renderTarget_->BeginDraw();
+    const auto& palette = paletteFor(themeMode_);
     renderTarget_->Clear(D2D1::ColorF(
-        0x0B1120,
-        translucentSurface_ ? 0.64F : 1.0F));
+        palette.background,
+        translucentSurface_ ? (themeMode_ == core::ThemeMode::Light ? 0.88F : 0.64F) : 1.0F));
 
     const auto header = toD2dRect(layout.header);
     renderTarget_->FillRoundedRectangle(
@@ -1339,7 +1359,7 @@ void LauncherWindow::showAddEditor()
 {
     auto edited = itemEditorHandler_
         ? itemEditorHandler_(window_, document_.tabs, activeTabIndex_, nullptr)
-        : ItemEditorDialog::show(window_, document_.tabs, activeTabIndex_);
+        : ItemEditorDialog::show(window_, document_.tabs, activeTabIndex_, nullptr, themeMode_);
     if (!edited) {
         return;
     }
@@ -1386,7 +1406,7 @@ void LauncherWindow::showEditEditor(const std::size_t absoluteIndex)
     const auto* initial = &document_.tabs[source.tabIndex].items[source.itemIndex];
     auto edited = itemEditorHandler_
         ? itemEditorHandler_(window_, document_.tabs, source.tabIndex, initial)
-        : ItemEditorDialog::show(window_, document_.tabs, source.tabIndex, initial);
+        : ItemEditorDialog::show(window_, document_.tabs, source.tabIndex, initial, themeMode_);
     if (!edited) return;
 
     auto updatedDocument = document_;

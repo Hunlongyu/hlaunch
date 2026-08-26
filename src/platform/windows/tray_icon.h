@@ -12,6 +12,7 @@ inline constexpr UINT trayIconCallbackMessage = WM_APP + 0x20;
 
 enum class TrayCommand : std::uint8_t {
     ToggleLauncher,
+    Settings,
     Exit,
 };
 

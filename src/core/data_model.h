@@ -20,6 +20,17 @@ enum class HotkeyBehavior {
     Toggle,
 };
 
+enum class ThemeMode {
+    Dark,
+    Light,
+};
+
+struct AppearanceConfig {
+    ThemeMode theme{ThemeMode::Dark};
+
+    bool operator==(const AppearanceConfig&) const = default;
+};
+
 enum class ScreenEdgeZone {
     Left,
     Right,
@@ -68,6 +79,7 @@ struct ActivationConfig {
 
 struct ApplicationConfig {
     std::uint32_t schemaVersion{currentSchemaVersion};
+    AppearanceConfig appearance{};
     ActivationConfig activation{};
 
     bool operator==(const ApplicationConfig&) const = default;

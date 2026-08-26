@@ -26,6 +26,9 @@ bool hasIssue(const Result& result, const JsonIssueCode code, const std::string_
 
 constexpr std::string_view validConfig = R"({
   "futureRoot": true,
+  "appearance": {
+    "theme": "dark"
+  },
   "activation": {
     "screenEdge": {
       "disableOnFullscreen": true,
@@ -80,6 +83,7 @@ TEST_CASE("DATA-CONFIG-001 config accepts unordered and unknown fields")
 
     REQUIRE(result.hasValue());
     CHECK(result.issues.empty());
+    CHECK(result.value->appearance.theme == hlaunch::core::ThemeMode::Dark);
     CHECK(result.value->activation.hotkey.enabled);
     CHECK(result.value->activation.hotkey.key == "Space");
     CHECK(result.value->activation.hotkey.modifiers
@@ -87,6 +91,47 @@ TEST_CASE("DATA-CONFIG-001 config accepts unordered and unknown fields")
     CHECK_FALSE(result.value->activation.screenEdge.enabled);
     CHECK(result.value->activation.screenEdge.zones
         == std::vector{hlaunch::core::ScreenEdgeZone::Left});
+}
+
+TEST_CASE("DATA-CONFIG-001 legacy config without appearance keeps the dark theme")
+{
+    std::string legacy{validConfig};
+    const auto start = legacy.find("  \"appearance\": {");
+    REQUIRE(start != std::string::npos);
+    const auto end = legacy.find("  \"activation\":", start);
+    REQUIRE(end != std::string::npos);
+    legacy.erase(start, end - start);
+
+    const auto result = hlaunch::infrastructure::json::decodeConfig(legacy);
+    REQUIRE(result.hasValue());
+    CHECK(result.issues.empty());
+    CHECK(result.value->appearance.theme == hlaunch::core::ThemeMode::Dark);
+}
+
+TEST_CASE("DATA-CONFIG-001 rejects an unknown appearance theme")
+{
+    std::string invalid{validConfig};
+    const auto position = invalid.find("\"theme\": \"dark\"");
+    REQUIRE(position != std::string::npos);
+    invalid.replace(position, std::string{"\"theme\": \"dark\""}.size(), "\"theme\": \"neon\"");
+
+    const auto result = hlaunch::infrastructure::json::decodeConfig(invalid);
+    CHECK_FALSE(result.hasValue());
+    CHECK(hasIssue(result, JsonIssueCode::Validation, "$.appearance.theme"));
+}
+
+TEST_CASE("DATA-CONFIG-001 does not treat a malformed appearance as legacy config")
+{
+    std::string invalid{validConfig};
+    const auto start = invalid.find("\"appearance\": {");
+    REQUIRE(start != std::string::npos);
+    const auto end = invalid.find("  \"activation\":", start);
+    REQUIRE(end != std::string::npos);
+    invalid.replace(start, end - start, "\"appearance\": 7,\n  ");
+
+    const auto result = hlaunch::infrastructure::json::decodeConfig(invalid);
+    CHECK_FALSE(result.hasValue());
+    CHECK(hasIssue(result, JsonIssueCode::InvalidJson, "$"));
 }
 
 TEST_CASE("DATA-CONFIG-001 config round trips through its persistence DTO")

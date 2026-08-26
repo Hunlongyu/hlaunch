@@ -113,7 +113,7 @@ std::optional<TrayCommand> TrayIcon::showContextMenu(const bool launcherVisible)
         MF_STRING,
         toggleMenuId,
         launcherVisible ? L"隐藏 HLaunch" : L"显示 HLaunch");
-    AppendMenuW(menu.get(), MF_STRING | MF_GRAYED, settingsMenuId, L"设置（尚未实现）");
+    AppendMenuW(menu.get(), MF_STRING, settingsMenuId, L"设置");
     AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu.get(), MF_STRING, exitMenuId, L"退出");
 
@@ -132,6 +132,9 @@ std::optional<TrayCommand> TrayIcon::showContextMenu(const bool launcherVisible)
     PostMessageW(data_.hWnd, WM_NULL, 0, 0);
     if (selected == toggleMenuId) {
         return TrayCommand::ToggleLauncher;
+    }
+    if (selected == settingsMenuId) {
+        return TrayCommand::Settings;
     }
     if (selected == exitMenuId) {
         return TrayCommand::Exit;

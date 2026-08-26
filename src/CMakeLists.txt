@@ -184,6 +184,10 @@ add_library(
         ui/item_editor_dialog.h
         ui/search_window.cpp
         ui/search_window.h
+        ui/settings_window.cpp
+        ui/settings_window.h
+        ui/theme.cpp
+        ui/theme.h
 )
 add_library(HLaunch::UI ALIAS hlaunch_ui)
 
@@ -202,8 +206,10 @@ target_link_libraries(
         HLaunch::Dependencies
         HLaunch::ProjectOptions
         d2d1
+        dwmapi
         dwrite
         user32
+        uxtheme
 )
 
 add_library(

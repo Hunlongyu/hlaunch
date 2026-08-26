@@ -6,6 +6,8 @@
 #include "ui/item_context_menu.h"
 #include "ui/launcher_layout.h"
 #include "ui/launcher_window.h"
+#include "ui/settings_window.h"
+#include "ui/theme.h"
 
 #include <Ole2.h>
 #include <doctest/doctest.h>
@@ -112,6 +114,52 @@ TEST_CASE("PROD-ITEM-001 item context menu exposes complete grouped actions")
     CHECK(GetMenuItemCount(moveMenu) == 2);
     CHECK((GetMenuState(moveMenu, 0, MF_BYPOSITION) & MF_CHECKED) != 0U);
     CHECK((GetMenuState(moveMenu, 1, MF_BYPOSITION) & MF_CHECKED) == 0U);
+}
+
+TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
+{
+    const auto& dark = hlaunch::ui::paletteFor(hlaunch::core::ThemeMode::Dark);
+    const auto& light = hlaunch::ui::paletteFor(hlaunch::core::ThemeMode::Light);
+    CHECK(dark.background != light.background);
+    CHECK(dark.text != light.text);
+    CHECK(dark.accent != light.accent);
+
+    auto selectedTheme = hlaunch::core::ThemeMode::Dark;
+    hlaunch::ui::SettingsWindow settings{};
+    REQUIRE(settings.show(
+        GetModuleHandleW(nullptr),
+        nullptr,
+        hlaunch::core::ThemeMode::Dark,
+        [&selectedTheme](const hlaunch::core::ThemeMode theme) {
+            selectedTheme = theme;
+            return true;
+        }));
+    REQUIRE(settings.handle() != nullptr);
+    CHECK(settings.isVisible());
+    const auto initialWindow = settings.handle();
+    const auto themeCombo = GetDlgItem(settings.handle(), 2001);
+    REQUIRE(themeCombo != nullptr);
+    SendMessageW(themeCombo, CB_SETCURSEL, 1, 0);
+    SendMessageW(
+        settings.handle(),
+        WM_COMMAND,
+        MAKEWPARAM(2001, CBN_SELCHANGE),
+        reinterpret_cast<LPARAM>(themeCombo));
+    CHECK(selectedTheme == hlaunch::core::ThemeMode::Light);
+    CHECK(SendMessageW(themeCombo, CB_GETCURSEL, 0, 0) == 1);
+
+    settings.hide();
+    CHECK_FALSE(settings.isVisible());
+    REQUIRE(settings.show(
+        GetModuleHandleW(nullptr),
+        nullptr,
+        hlaunch::core::ThemeMode::Dark,
+        [&selectedTheme](const hlaunch::core::ThemeMode theme) {
+            selectedTheme = theme;
+            return true;
+        }));
+    CHECK(settings.handle() == initialWindow);
+    settings.hide();
 }
 
 TEST_CASE("PLAT-SINGLE-001 command line maps activation commands without payload pointers")

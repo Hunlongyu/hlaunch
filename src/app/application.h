@@ -8,10 +8,12 @@
 #include "platform/windows/single_instance.h"
 #include "platform/windows/tray_icon.h"
 #include "ui/launcher_window.h"
+#include "ui/settings_window.h"
 
 #include <Windows.h>
 
 #include <optional>
+#include <filesystem>
 
 namespace hlaunch::app {
 
@@ -29,10 +31,16 @@ private:
     [[nodiscard]] bool createActivationWindow(HINSTANCE instance);
     void execute(platform::windows::ActivationCommand command);
     void launch(const core::LaunchItem& item);
+    void showSettings();
+    [[nodiscard]] bool changeTheme(core::ThemeMode themeMode);
 
+    HINSTANCE instance_{};
+    core::ApplicationConfig config_{};
+    std::filesystem::path configFile_{};
     std::optional<platform::windows::SingleInstance> singleInstance_{};
     std::optional<infrastructure::filesystem::ItemsSaveWorker> itemsSaver_{};
     ui::LauncherWindow launcher_{};
+    ui::SettingsWindow settings_{};
     HWND activationWindow_{};
     platform::windows::GlobalHotkey hotkey_{};
     platform::windows::ScreenEdgeActivation screenEdge_{};

@@ -1,5 +1,7 @@
 #include "ui/search_window.h"
 
+#include "ui/theme.h"
+
 #include <d2d1helper.h>
 #include <windowsx.h>
 
@@ -42,11 +44,13 @@ bool SearchWindow::create(
     const HINSTANCE instance,
     const HWND owner,
     const platform::windows::WindowEffects& effects,
+    const core::ThemeMode themeMode,
     QueryChangedHandler queryChangedHandler,
     KeyHandler keyHandler)
 {
     queryChangedHandler_ = std::move(queryChangedHandler);
     keyHandler_ = std::move(keyHandler);
+    themeMode_ = themeMode;
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(WNDCLASSEXW);
     windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW;
@@ -77,7 +81,19 @@ bool SearchWindow::create(
     }
 
     static_cast<void>(platform::windows::applyWindowEffects(window_, effects));
+    applyNativeWindowTheme(window_, themeMode_);
     return true;
+}
+
+void SearchWindow::setThemeMode(const core::ThemeMode themeMode)
+{
+    if (themeMode_ == themeMode) {
+        return;
+    }
+    themeMode_ = themeMode;
+    applyNativeWindowTheme(window_, themeMode_);
+    discardDeviceResources();
+    InvalidateRect(window_, nullptr, FALSE);
 }
 
 void SearchWindow::show()
@@ -331,16 +347,18 @@ bool SearchWindow::createDeviceResources()
         return false;
     }
 
+    const auto& palette = paletteFor(themeMode_);
+    const bool light = themeMode_ == core::ThemeMode::Light;
     const struct BrushDefinition {
         std::uint32_t color;
         float opacity;
         winrt::com_ptr<ID2D1SolidColorBrush>* destination;
     } brushes[]{
-        {0x0B1120, translucentSurface_ ? 0.70F : 1.0F, &backgroundBrush_},
-        {0x121B2D, translucentSurface_ ? 0.86F : 1.0F, &surfaceBrush_},
-        {0x94A3B8, 1.0F, &textBrush_},
-        {0xF8FAFC, 1.0F, &queryTextBrush_},
-        {0x52627D, translucentSurface_ ? 0.68F : 1.0F, &borderBrush_},
+        {palette.background, translucentSurface_ ? (light ? 0.90F : 0.70F) : 1.0F, &backgroundBrush_},
+        {palette.surface, translucentSurface_ ? (light ? 0.94F : 0.86F) : 1.0F, &surfaceBrush_},
+        {palette.textMuted, 1.0F, &textBrush_},
+        {palette.text, 1.0F, &queryTextBrush_},
+        {palette.border, translucentSurface_ ? (light ? 0.92F : 0.68F) : 1.0F, &borderBrush_},
     };
     for (const auto& brush : brushes) {
         if (FAILED(renderTarget_->CreateSolidColorBrush(
@@ -429,9 +447,10 @@ void SearchWindow::render()
     }
 
     renderTarget_->BeginDraw();
+    const auto& palette = paletteFor(themeMode_);
     renderTarget_->Clear(D2D1::ColorF(
-        0x0B1120,
-        translucentSurface_ ? 0.70F : 1.0F));
+        palette.background,
+        translucentSurface_ ? (themeMode_ == core::ThemeMode::Light ? 0.90F : 0.70F) : 1.0F));
 
     const auto field = toD2dRect(layout_.field);
     renderTarget_->FillRoundedRectangle(

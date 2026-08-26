@@ -2,6 +2,7 @@
 
 #include "platform/windows/window_effects.h"
 #include "ui/launcher_layout.h"
+#include "ui/theme.h"
 
 #include <Windows.h>
 #include <d2d1.h>
@@ -29,8 +30,10 @@ public:
         HINSTANCE instance,
         HWND owner,
         const platform::windows::WindowEffects& effects,
+        core::ThemeMode themeMode,
         QueryChangedHandler queryChangedHandler,
         KeyHandler keyHandler);
+    void setThemeMode(core::ThemeMode themeMode);
     void show();
     void positionAttached(HWND owner, UINT dpi, const SearchPopupLayout& layout);
     void hide();
@@ -59,6 +62,7 @@ private:
     HWND window_{};
     UINT dpi_{96};
     bool translucentSurface_{true};
+    core::ThemeMode themeMode_{core::ThemeMode::Dark};
     SearchPopupLayout layout_{};
     std::wstring query_{};
     QueryChangedHandler queryChangedHandler_{};

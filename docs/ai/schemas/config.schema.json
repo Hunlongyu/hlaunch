@@ -6,6 +6,14 @@
   "required": ["schemaVersion", "activation"],
   "properties": {
     "schemaVersion": { "const": 1 },
+    "appearance": {
+      "type": "object",
+      "required": ["theme"],
+      "properties": {
+        "theme": { "enum": ["dark", "light"], "default": "dark" }
+      },
+      "additionalProperties": true
+    },
     "activation": {
       "type": "object",
       "required": ["hotkey", "screenEdge"],

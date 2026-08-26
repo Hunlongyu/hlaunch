@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/data_model.h"
+#include "ui/theme.h"
 
 #include <Windows.h>
 
@@ -21,7 +22,8 @@ class ItemEditorDialog final
   public:
     [[nodiscard]] static std::optional<ItemEditorResult>
     show(HWND owner, const std::vector<core::Tab> &tabs, std::size_t initialTabIndex,
-         const core::LaunchItem *initialItem = nullptr);
+         const core::LaunchItem *initialItem = nullptr,
+         core::ThemeMode themeMode = core::ThemeMode::Dark);
 };
 
 } // namespace hlaunch::ui

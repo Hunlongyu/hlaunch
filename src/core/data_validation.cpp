@@ -126,6 +126,15 @@ std::vector<ValidationIssue> validateConfig(const ApplicationConfig& config)
         addIssue(issues, "$.schemaVersion", "schemaVersion must be 1");
     }
 
+    switch (config.appearance.theme) {
+    case ThemeMode::Dark:
+    case ThemeMode::Light:
+        break;
+    default:
+        addIssue(issues, "$.appearance.theme", "theme must be dark or light");
+        break;
+    }
+
     if (config.activation.hotkey.modifiers.empty()) {
         addIssue(issues, "$.activation.hotkey.modifiers", "at least one modifier is required");
     }

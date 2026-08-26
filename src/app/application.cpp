@@ -96,6 +96,7 @@ std::string_view activationCommandName(
 
 int Application::run(const HINSTANCE instance, const StartupOptions& options)
 {
+    instance_ = instance;
     SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     auto acquiredInstance = platform::windows::SingleInstance::acquire();
@@ -184,6 +185,9 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
             + " item_count=" + std::to_string(itemCount(*items->value))
             + " issue_count=" + std::to_string(items->issues.size()));
 
+    config_ = *config->value;
+    configFile_ = paths->configFile;
+
     infrastructure::logging::write(
         infrastructure::logging::Level::Info,
         "launcher_window_create_started");
@@ -192,7 +196,9 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
             options.windowEffects,
             options.showSearch,
             std::move(*items->value),
-            [this](const core::LaunchItem& item) { launch(item); })) {
+            [this](const core::LaunchItem& item) { launch(item); },
+            {},
+            config_.appearance.theme)) {
         infrastructure::logging::writeSystemError(
             infrastructure::logging::Level::Error,
             "launcher_window_create_failed",
@@ -245,7 +251,7 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
             }
         });
 
-    const auto& hotkeyConfig = config->value->activation.hotkey;
+    const auto& hotkeyConfig = config_.activation.hotkey;
     const auto hotkeyResult = hotkey_.apply(activationWindow_, hotkeyConfig);
     const bool hotkeyAvailable = hotkeyResult.has_value() && hotkey_.isRegistered();
     const bool screenEdgeStarted = screenEdge_.start(
@@ -253,7 +259,7 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
             .activationWindow = activationWindow_,
             .launcherWindow = launcher_.handle(),
         },
-        config->value->activation.screenEdge);
+        config_.activation.screenEdge);
     const bool trayStarted = trayIcon_.start(
         activationWindow_,
         LoadIconW(nullptr, IDI_APPLICATION));
@@ -415,6 +421,9 @@ LRESULT Application::handleActivationMessage(
         case platform::windows::TrayCommand::ToggleLauncher:
             launcher_.toggle();
             break;
+        case platform::windows::TrayCommand::Settings:
+            showSettings();
+            break;
         case platform::windows::TrayCommand::Exit:
             launcher_.close();
             break;
@@ -481,6 +490,52 @@ void Application::launch(const core::LaunchItem& item)
         message.c_str(),
         L"HLaunch 启动失败",
         MB_OK | MB_ICONERROR);
+}
+
+void Application::showSettings()
+{
+    launcher_.show();
+    if (!settings_.show(
+            instance_,
+            launcher_.handle(),
+            config_.appearance.theme,
+            [this](const core::ThemeMode themeMode) { return changeTheme(themeMode); })) {
+        MessageBoxW(
+            launcher_.handle(),
+            L"无法创建设置窗口。",
+            L"HLaunch 设置",
+            MB_OK | MB_ICONERROR);
+    }
+}
+
+bool Application::changeTheme(const core::ThemeMode themeMode)
+{
+    if (config_.appearance.theme == themeMode) {
+        return true;
+    }
+    auto updated = config_;
+    updated.appearance.theme = themeMode;
+    const auto saved = infrastructure::filesystem::saveConfig(configFile_, updated);
+    if (!saved) {
+        infrastructure::logging::writeSystemError(
+            infrastructure::logging::Level::Error,
+            "config_theme_save_failed",
+            saved.error().systemCode);
+        MessageBoxW(
+            settings_.handle(),
+            L"无法保存主题设置，请检查数据目录权限或磁盘空间。",
+            L"HLaunch 设置",
+            MB_OK | MB_ICONERROR);
+        return false;
+    }
+    config_ = std::move(updated);
+    launcher_.setThemeMode(themeMode);
+    settings_.setThemeMode(themeMode);
+    infrastructure::logging::write(
+        infrastructure::logging::Level::Info,
+        themeMode == core::ThemeMode::Light ? "theme_changed value=light"
+                                            : "theme_changed value=dark");
+    return true;
 }
 
 } // namespace hlaunch::app

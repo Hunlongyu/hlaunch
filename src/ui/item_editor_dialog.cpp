@@ -1,7 +1,11 @@
 #include "ui/item_editor_dialog.h"
 
+#include "ui/theme.h"
+
 #include <algorithm>
 #include <array>
+#include <windowsx.h>
+#include <wil/resource.h>
 #include <string>
 #include <string_view>
 
@@ -10,7 +14,9 @@ namespace {
 
 constexpr wchar_t editorClass[] = L"HLaunch.ItemEditor.v1";
 constexpr int editorWidth = 560;
-constexpr int editorHeight = 610;
+constexpr int editorHeight = 660;
+constexpr int headerHeight = 48;
+constexpr int contentOffset = 48;
 constexpr int idName = 1001;
 constexpr int idType = 1002;
 constexpr int idTarget = 1003;
@@ -70,8 +76,11 @@ class EditorState final
 {
   public:
     EditorState(const std::vector<core::Tab> &tabs, const std::size_t initialTab,
-                const core::LaunchItem *item)
-        : tabs_(tabs), initialTab_(initialTab), initialItem_(item)
+                const core::LaunchItem *item, const core::ThemeMode themeMode)
+        : tabs_(tabs), initialTab_(initialTab), initialItem_(item), themeMode_(themeMode),
+          palette_(paletteFor(themeMode)),
+          backgroundBrush_(CreateSolidBrush(toColorRef(palette_.background))),
+          surfaceBrush_(CreateSolidBrush(toColorRef(palette_.surface)))
     {}
 
     static LRESULT CALLBACK procedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -96,8 +105,54 @@ class EditorState final
     {
         if (message == WM_CREATE)
         {
+            applyNativeWindowTheme(window_, themeMode_);
             createControls();
             return 0;
+        }
+        if (message == WM_PAINT)
+        {
+            paint();
+            return 0;
+        }
+        if (message == WM_ERASEBKGND)
+            return TRUE;
+        if (message == WM_NCHITTEST)
+        {
+            POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            ScreenToClient(window_, &point);
+            if (point.y >= 0 && point.y < headerHeight && !closeHit(point))
+                return HTCAPTION;
+            return HTCLIENT;
+        }
+        if (message == WM_LBUTTONUP)
+        {
+            const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            if (closeHit(point))
+                finish();
+            return 0;
+        }
+        if (message == WM_CTLCOLORSTATIC || message == WM_CTLCOLOREDIT
+            || message == WM_CTLCOLORLISTBOX || message == WM_CTLCOLORBTN)
+        {
+            const auto context = reinterpret_cast<HDC>(wParam); // NOLINT(performance-no-int-to-ptr): Win32 passes HDC in WPARAM.
+            SetTextColor(context, toColorRef(palette_.text));
+            SetBkColor(context, toColorRef(
+                message == WM_CTLCOLORSTATIC || message == WM_CTLCOLORBTN
+                                               ? palette_.background
+                                               : palette_.surface));
+            return reinterpret_cast<LRESULT>(
+                message == WM_CTLCOLORSTATIC || message == WM_CTLCOLORBTN
+                                                 ? backgroundBrush_.get()
+                                                 : surfaceBrush_.get()); // NOLINT(performance-no-int-to-ptr): Win32 expects HBRUSH in LRESULT.
+        }
+        if (message == WM_DRAWITEM)
+        {
+            const auto &item = *reinterpret_cast<const DRAWITEMSTRUCT *>(lParam); // NOLINT(performance-no-int-to-ptr): Win32 LPARAM carries DRAWITEMSTRUCT*.
+            if (item.CtlType == ODT_COMBOBOX)
+                drawComboItem(item);
+            else
+                drawButton(item);
+            return TRUE;
         }
         if (message == WM_COMMAND)
         {
@@ -117,10 +172,10 @@ class EditorState final
             finish();
             return 0;
         }
-    if (message == WM_DESTROY)
-    {
-        window_ = nullptr;
-        return 0;
+        if (message == WM_DESTROY)
+        {
+            window_ = nullptr;
+            return 0;
         }
         return DefWindowProcW(window_, message, wParam, lParam);
     }
@@ -135,43 +190,44 @@ class EditorState final
                                 window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), // NOLINT(performance-no-int-to-ptr): Child controls encode their integer ID in HMENU.
                                 GetModuleHandleW(nullptr), nullptr);
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            applyNativeControlTheme(control, themeMode_);
             return control;
         };
         auto label = [&](const wchar_t *text, int y) {
-            add(L"STATIC", text, 0, 20, y, 120, 20, 0);
+            add(L"STATIC", text, 0, 20, y + contentOffset, 120, 20, 0);
         };
         const int fieldX = 145;
         label(L"名称", 22);
         name_ =
-            add(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP, fieldX, 18, 380, 25, idName);
+            add(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP, fieldX, 18 + contentOffset, 380, 25, idName);
         label(L"类型", 60);
-        type_ = add(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP, fieldX, 56, 220, 200, idType);
+        type_ = add(L"COMBOBOX", L"", CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_TABSTOP, fieldX, 56 + contentOffset, 220, 200, idType);
         for (const wchar_t *value : {L"应用", L"文件", L"文件夹", L"网址", L"快捷方式"})
             SendMessageW(type_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(value));
         label(L"目标", 98);
-        target_ = add(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP, fieldX, 94, 380, 25,
+        target_ = add(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP, fieldX, 94 + contentOffset, 380, 25,
                       idTarget);
         label(L"参数（每行一个）", 136);
         arguments_ =
             add(L"EDIT", L"", WS_BORDER | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | WS_TABSTOP,
-                fieldX, 132, 380, 100, idArguments);
+                fieldX, 132 + contentOffset, 380, 100, idArguments);
         label(L"工作目录（可选）", 250);
-        workingDirectory_ = add(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP, fieldX, 246,
+        workingDirectory_ = add(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP, fieldX, 246 + contentOffset,
                                 380, 25, idWorkingDirectory);
         label(L"图标路径（可选）", 288);
-        icon_ = add(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP, fieldX, 284, 380, 25,
+        icon_ = add(L"EDIT", L"", WS_BORDER | ES_AUTOHSCROLL | WS_TABSTOP, fieldX, 284 + contentOffset, 380, 25,
                     idIcon);
         label(L"所属分类", 326);
-        tab_ = add(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP, fieldX, 322, 220, 200, idTab);
+        tab_ = add(L"COMBOBOX", L"", CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_TABSTOP, fieldX, 322 + contentOffset, 220, 200, idTab);
         for (const auto &tab : tabs_)
         {
             const auto name = utf8ToWide(tab.name);
             SendMessageW(tab_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name.c_str()));
         }
         administrator_ = add(L"BUTTON", L"以管理员身份运行", BS_AUTOCHECKBOX | WS_TABSTOP, fieldX,
-                             366, 220, 25, idAdministrator);
-        add(L"BUTTON", L"保存", BS_DEFPUSHBUTTON | WS_TABSTOP, 325, 525, 95, 32, idSave);
-        add(L"BUTTON", L"取消", BS_PUSHBUTTON | WS_TABSTOP, 430, 525, 95, 32, idCancel);
+                             366 + contentOffset, 220, 25, idAdministrator);
+        add(L"BUTTON", L"保存", BS_OWNERDRAW | WS_TABSTOP, 325, 573, 95, 34, idSave);
+        add(L"BUTTON", L"取消", BS_OWNERDRAW | WS_TABSTOP, 430, 573, 95, 34, idCancel);
         SendMessageW(tab_, CB_SETCURSEL,
                      std::min(initialTab_, tabs_.empty() ? 0U : tabs_.size() - 1U), 0);
         SendMessageW(type_, CB_SETCURSEL, 0, 0);
@@ -182,6 +238,109 @@ class EditorState final
         if (initialItem_)
             populate();
         SetFocus(name_);
+    }
+
+    [[nodiscard]] bool closeHit(const POINT point) const noexcept
+    {
+        return point.x >= editorWidth - 48 && point.x < editorWidth
+            && point.y >= 0 && point.y < headerHeight;
+    }
+
+    void paint()
+    {
+        PAINTSTRUCT paintState{};
+        const auto context = BeginPaint(window_, &paintState);
+        RECT client{};
+        GetClientRect(window_, &client);
+        FillRect(context, &client, backgroundBrush_.get());
+
+        const auto oldFont = SelectObject(context, GetStockObject(DEFAULT_GUI_FONT));
+        SetBkMode(context, TRANSPARENT);
+        SetTextColor(context, toColorRef(palette_.text));
+        RECT titleBounds{52, 0, editorWidth - 56, headerHeight};
+        DrawTextW(
+            context,
+            initialItem_ ? L"编辑条目" : L"添加条目",
+            -1,
+            &titleBounds,
+            DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        const auto accentBrush = CreateSolidBrush(toColorRef(palette_.accent));
+        RECT logo{20, 15, 38, 33};
+        FillRect(context, &logo, accentBrush);
+        DeleteObject(accentBrush);
+
+        const auto pen = CreatePen(PS_SOLID, 2, toColorRef(palette_.textMuted));
+        const auto oldPen = SelectObject(context, pen);
+        MoveToEx(context, editorWidth - 30, 18, nullptr);
+        LineTo(context, editorWidth - 20, 28);
+        MoveToEx(context, editorWidth - 20, 18, nullptr);
+        LineTo(context, editorWidth - 30, 28);
+        SelectObject(context, oldPen);
+        DeleteObject(pen);
+        SelectObject(context, oldFont);
+        EndPaint(window_, &paintState);
+    }
+
+    void drawButton(const DRAWITEMSTRUCT &item) const
+    {
+        const bool saveButton = item.CtlID == idSave;
+        const bool pressed = (item.itemState & ODS_SELECTED) != 0;
+        const auto fillColor = saveButton && !pressed ? palette_.accent : palette_.elevated;
+        const auto fill = CreateSolidBrush(toColorRef(fillColor));
+        const auto border = CreatePen(PS_SOLID, 1, toColorRef(saveButton ? palette_.accent : palette_.border));
+        const auto oldBrush = SelectObject(item.hDC, fill);
+        const auto oldPen = SelectObject(item.hDC, border);
+        RoundRect(item.hDC, item.rcItem.left, item.rcItem.top, item.rcItem.right, item.rcItem.bottom, 10, 10);
+        SelectObject(item.hDC, oldBrush);
+        SelectObject(item.hDC, oldPen);
+        DeleteObject(fill);
+        DeleteObject(border);
+
+        wchar_t text[32]{};
+        GetWindowTextW(item.hwndItem, text, static_cast<int>(std::size(text)));
+        SetBkMode(item.hDC, TRANSPARENT);
+        const auto buttonText = saveButton
+            ? (themeMode_ == core::ThemeMode::Dark ? palette_.background : 0xFFFFFFU)
+            : palette_.text;
+        SetTextColor(item.hDC, toColorRef(buttonText));
+        RECT bounds = item.rcItem;
+        DrawTextW(item.hDC, text, -1, &bounds, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        if ((item.itemState & ODS_FOCUS) != 0)
+        {
+            InflateRect(&bounds, -4, -4);
+            DrawFocusRect(item.hDC, &bounds);
+        }
+    }
+
+    void drawComboItem(const DRAWITEMSTRUCT &item) const
+    {
+        const bool dropdownSelection = (item.itemState & ODS_SELECTED) != 0
+            && (item.itemState & ODS_COMBOBOXEDIT) == 0;
+        const auto background = dropdownSelection ? palette_.accent : palette_.surface;
+        const auto brush = CreateSolidBrush(toColorRef(background));
+        FillRect(item.hDC, &item.rcItem, brush);
+        DeleteObject(brush);
+
+        const auto selectedIndex = item.itemID == static_cast<UINT>(-1)
+            ? static_cast<UINT>(SendMessageW(item.hwndItem, CB_GETCURSEL, 0, 0))
+            : item.itemID;
+        wchar_t text[256]{};
+        if (selectedIndex != static_cast<UINT>(CB_ERR))
+            SendMessageW(item.hwndItem, CB_GETLBTEXT, selectedIndex, reinterpret_cast<LPARAM>(text));
+        SetBkMode(item.hDC, TRANSPARENT);
+        const auto textColor = dropdownSelection
+            ? (themeMode_ == core::ThemeMode::Dark ? palette_.background : 0xFFFFFFU)
+            : palette_.text;
+        SetTextColor(item.hDC, toColorRef(textColor));
+        RECT bounds = item.rcItem;
+        bounds.left += 6;
+        DrawTextW(item.hDC, text, -1, &bounds, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        if ((item.itemState & ODS_FOCUS) != 0)
+        {
+            bounds = item.rcItem;
+            InflateRect(&bounds, -2, -2);
+            DrawFocusRect(item.hDC, &bounds);
+        }
     }
 
     void populate()
@@ -300,6 +459,10 @@ class EditorState final
     const std::vector<core::Tab> &tabs_;
     std::size_t initialTab_{};
     const core::LaunchItem *initialItem_{};
+    core::ThemeMode themeMode_{core::ThemeMode::Dark};
+    ThemePalette palette_{};
+    wil::unique_hbrush backgroundBrush_{};
+    wil::unique_hbrush surfaceBrush_{};
     std::optional<ItemEditorResult> result_{};
 };
 
@@ -308,7 +471,8 @@ class EditorState final
 std::optional<ItemEditorResult> ItemEditorDialog::show(HWND owner,
                                                        const std::vector<core::Tab> &tabs,
                                                        std::size_t initialTabIndex,
-                                                       const core::LaunchItem *initialItem)
+                                                       const core::LaunchItem *initialItem,
+                                                       const core::ThemeMode themeMode)
 {
     if (tabs.empty())
     {
@@ -319,18 +483,18 @@ std::optional<ItemEditorResult> ItemEditorDialog::show(HWND owner,
     cls.lpfnWndProc = &EditorState::procedure;
     cls.hInstance = GetModuleHandleW(nullptr);
     cls.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    cls.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1); // NOLINT(performance-no-int-to-ptr): Win32 encodes system color brushes as integer resources.
+    cls.hbrBackground = nullptr;
     cls.lpszClassName = editorClass;
     if (!RegisterClassExW(&cls) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
         return std::nullopt;
-    EditorState state{tabs, initialTabIndex, initialItem};
+    EditorState state{tabs, initialTabIndex, initialItem, themeMode};
     RECT ownerRect{};
     GetWindowRect(owner, &ownerRect);
     const int x = ownerRect.left + ((ownerRect.right - ownerRect.left - editorWidth) / 2);
     const int y = ownerRect.top + ((ownerRect.bottom - ownerRect.top - editorHeight) / 2);
     const auto window =
-        CreateWindowExW(WS_EX_DLGMODALFRAME, editorClass, initialItem ? L"编辑条目" : L"添加条目",
-                        WS_POPUP | WS_CAPTION | WS_SYSMENU, x, y, editorWidth, editorHeight, owner,
+        CreateWindowExW(WS_EX_TOOLWINDOW, editorClass, initialItem ? L"编辑条目" : L"添加条目",
+                        WS_POPUP, x, y, editorWidth, editorHeight, owner,
                         nullptr, GetModuleHandleW(nullptr), &state);
     if (!window)
         return std::nullopt;

@@ -10,6 +10,7 @@
 #include "platform/windows/window_effects.h"
 #include "ui/item_editor_dialog.h"
 #include "ui/search_window.h"
+#include "ui/theme.h"
 
 #include <Windows.h>
 #include <d2d1.h>
@@ -49,7 +50,9 @@ public:
         bool showSearch,
         core::ItemsDocument document,
         LaunchHandler launchHandler,
-        DocumentChangedHandler documentChangedHandler = {});
+        DocumentChangedHandler documentChangedHandler = {},
+        core::ThemeMode themeMode = core::ThemeMode::Dark);
+    void setThemeMode(core::ThemeMode themeMode);
     void setDocumentChangedHandler(DocumentChangedHandler handler);
     void setDeleteConfirmationHandler(DeleteConfirmationHandler handler);
     void setItemEditorHandler(ItemEditorHandler handler);
@@ -140,6 +143,7 @@ private:
     HWND window_{};
     UINT dpi_{96};
     bool translucentSurface_{true};
+    core::ThemeMode themeMode_{core::ThemeMode::Dark};
     bool searchVisible_{};
     core::ItemsDocument document_{};
     core::SearchIndex searchIndex_{};
