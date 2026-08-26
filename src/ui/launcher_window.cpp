@@ -5,9 +5,11 @@
 #include <d2d1helper.h>
 #include <windowsx.h>
 
-#include <array>
+#include <algorithm>
 #include <cstdint>
+#include <string>
 #include <string_view>
+#include <utility>
 
 namespace hlaunch::ui {
 namespace {
@@ -17,39 +19,64 @@ constexpr float cornerRadius = 12.0F;
 constexpr int launcherWidthDip = 420;
 constexpr int launcherHeightDip = 640;
 
-struct PreviewItem {
-    std::wstring_view name{};
-    std::wstring_view glyph{};
-    std::uint32_t color{};
-};
+constexpr std::size_t maximumVisibleItems = 25;
 
-constexpr std::array previewItems{
-    PreviewItem{L"浏览器", L"B", 0x3B82F6},
-    PreviewItem{L"终端", L">_", 0x14B8A6},
-    PreviewItem{L"文件", L"F", 0x8B5CF6},
-    PreviewItem{L"笔记", L"N", 0xF59E0B},
-    PreviewItem{L"设计", L"D", 0xEC4899},
-    PreviewItem{L"项目", L"P", 0x22C55E},
-    PreviewItem{L"链接", L"L", 0x06B6D4},
-    PreviewItem{L"邮件", L"M", 0xF97316},
-    PreviewItem{L"日历", L"C", 0x0EA5E9},
-    PreviewItem{L"计算器", L"=", 0x6366F1},
-    PreviewItem{L"音乐", L"M", 0xD946EF},
-    PreviewItem{L"图片", L"I", 0x10B981},
-    PreviewItem{L"下载", L"↓", 0x0284C7},
-    PreviewItem{L"设置", L"S", 0x64748B},
-    PreviewItem{L"回收站", L"R", 0x475569},
-    PreviewItem{L"代码", L"C", 0x2563EB},
-    PreviewItem{L"远程", L"R", 0x0891B2},
-    PreviewItem{L"工具", L"T", 0x7C3AED},
-    PreviewItem{L"文档", L"W", 0x16A34A},
-    PreviewItem{L"视频", L"V", 0xDB2777},
-    PreviewItem{L"命令", L">", 0x0F766E},
-    PreviewItem{L"监视", L"M", 0x0369A1},
-    PreviewItem{L"压缩", L"Z", 0xB45309},
-    PreviewItem{L"便携", L"P", 0x4F46E5},
-    PreviewItem{L"添加", L"+", 0x64748B},
-};
+std::wstring utf8ToWide(const std::string_view value)
+{
+    if (value.empty()) {
+        return {};
+    }
+    const int required = MultiByteToWideChar(
+        CP_UTF8,
+        MB_ERR_INVALID_CHARS,
+        value.data(),
+        static_cast<int>(value.size()),
+        nullptr,
+        0);
+    if (required <= 0) {
+        return L"?";
+    }
+    std::wstring result(static_cast<std::size_t>(required), L'\0');
+    if (MultiByteToWideChar(
+            CP_UTF8,
+            MB_ERR_INVALID_CHARS,
+            value.data(),
+            static_cast<int>(value.size()),
+            result.data(),
+            required) != required) {
+        return L"?";
+    }
+    return result;
+}
+
+std::wstring itemGlyph(const std::wstring_view name)
+{
+    if (name.empty()) {
+        return L"?";
+    }
+    const std::size_t length = IS_HIGH_SURROGATE(name.front()) && name.size() > 1
+        && IS_LOW_SURROGATE(name[1])
+        ? 2U
+        : 1U;
+    return std::wstring{name.substr(0, length)};
+}
+
+std::uint32_t itemColor(const core::ItemType type) noexcept
+{
+    switch (type) {
+    case core::ItemType::Application:
+        return 0x3B82F6;
+    case core::ItemType::File:
+        return 0x8B5CF6;
+    case core::ItemType::Folder:
+        return 0xF59E0B;
+    case core::ItemType::Url:
+        return 0x06B6D4;
+    case core::ItemType::Shortcut:
+        return 0x14B8A6;
+    }
+    return 0x64748B;
+}
 
 D2D1_RECT_F toD2dRect(const RectDip& rectangle)
 {
@@ -72,8 +99,13 @@ LauncherWindow::~LauncherWindow()
 bool LauncherWindow::create(
     const HINSTANCE instance,
     const platform::windows::WindowEffects& effects,
-    const bool showSearch)
+    const bool showSearch,
+    core::ItemsDocument document,
+    LaunchHandler launchHandler)
 {
+    document_ = std::move(document);
+    launchHandler_ = std::move(launchHandler);
+    activeTabIndex_ = 0;
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(WNDCLASSEXW);
     windowClass.style = CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW;
@@ -311,7 +343,11 @@ LRESULT LauncherWindow::handleMessage(
         const float yDip = static_cast<float>(point.y) * 96.0F / static_cast<float>(dpi_);
         const float widthDip = static_cast<float>(client.right) * 96.0F / static_cast<float>(dpi_);
         const float heightDip = static_cast<float>(client.bottom) * 96.0F / static_cast<float>(dpi_);
-        const auto layout = calculateLauncherLayout({widthDip, heightDip, 0});
+        const auto layout = calculateLauncherLayout({
+            widthDip,
+            heightDip,
+            displayedTileCount(),
+        });
         return isLauncherDragRegion(layout, xDip, yDip) ? HTCAPTION : HTCLIENT;
     }
     case WM_LBUTTONUP: {
@@ -325,11 +361,31 @@ LRESULT LauncherWindow::handleMessage(
             / static_cast<float>(dpi_);
         const float heightDip = static_cast<float>(client.bottom) * 96.0F
             / static_cast<float>(dpi_);
-        const auto layout = calculateLauncherLayout({widthDip, heightDip, 0});
+        const auto layout = calculateLauncherLayout({
+            widthDip,
+            heightDip,
+            displayedTileCount(),
+        });
         const auto& closeButton = layout.closeButton;
         if (xDip >= closeButton.x && xDip < closeButton.x + closeButton.width
             && yDip >= closeButton.y && yDip < closeButton.y + closeButton.height) {
             DestroyWindow(window_);
+            return 0;
+        }
+        if (const auto tabIndex = hitTestLauncherTab(
+                layout,
+                document_.tabs.size(),
+                xDip,
+                yDip)) {
+            activeTabIndex_ = *tabIndex;
+            InvalidateRect(window_, nullptr, FALSE);
+            return 0;
+        }
+        if (const auto itemIndex = hitTestLauncherItem(layout, xDip, yDip)) {
+            const auto* tab = activeTab();
+            if (tab && *itemIndex < tab->items.size() && launchHandler_) {
+                launchHandler_(tab->items[*itemIndex]);
+            }
         }
         return 0;
     }
@@ -537,7 +593,7 @@ void LauncherWindow::positionSearchWindow()
     const auto launcherLayout = calculateLauncherLayout({
         .clientWidthDip = widthDip,
         .clientHeightDip = heightDip,
-        .itemCount = previewItems.size(),
+        .itemCount = displayedTileCount(),
     });
     searchWindow_.positionAttached(
         window_,
@@ -558,7 +614,7 @@ void LauncherWindow::render()
     const auto layout = calculateLauncherLayout({
         .clientWidthDip = renderSize.width,
         .clientHeightDip = renderSize.height,
-        .itemCount = previewItems.size(),
+        .itemCount = displayedTileCount(),
     });
 
     renderTarget_->BeginDraw();
@@ -593,29 +649,46 @@ void LauncherWindow::render()
         mutedTextBrush_.get(),
         1.5F);
 
-    constexpr std::array tabNames{L"全部", L"常用", L"工作", L"工具"};
-    const float tabWidth = layout.tabs.width / static_cast<float>(tabNames.size());
-    for (std::size_t index = 0; index < tabNames.size(); ++index) {
+    const auto tabCount = document_.tabs.size();
+    const float tabWidth = tabCount > 0
+        ? layout.tabs.width / static_cast<float>(tabCount)
+        : layout.tabs.width;
+    for (std::size_t index = 0; index < tabCount; ++index) {
         const auto tabRect = D2D1::RectF(
             layout.tabs.x + static_cast<float>(index) * tabWidth,
             layout.tabs.y,
             layout.tabs.x + static_cast<float>(index + 1) * tabWidth,
             layout.tabs.y + layout.tabs.height);
         drawText(
-            tabNames[index],
+            utf8ToWide(document_.tabs[index].name),
             tabRect,
             tabFormat_.get(),
-            index == 0 ? textBrush_.get() : mutedTextBrush_.get());
-        if (index == 0) {
+            index == activeTabIndex_ ? textBrush_.get() : mutedTextBrush_.get());
+        if (index == activeTabIndex_) {
             renderTarget_->FillRectangle(
                 D2D1::RectF(tabRect.left + 10.0F, tabRect.bottom - 2.0F, tabRect.right - 10.0F, tabRect.bottom),
                 accentBrush_.get());
         }
     }
+    if (tabCount == 0) {
+        drawText(
+            L"暂无分类",
+            toD2dRect(layout.tabs),
+            tabFormat_.get(),
+            mutedTextBrush_.get());
+    }
 
     const auto gridBounds = toD2dRect(layout.grid);
     renderTarget_->PushAxisAlignedClip(gridBounds, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    const auto* tab = activeTab();
+    const auto realItemCount = tab
+        ? std::min(tab->items.size(), maximumVisibleItems)
+        : 0U;
     for (std::size_t index = 0; index < layout.items.size(); ++index) {
+        const bool addTile = index >= realItemCount;
+        const auto name = addTile ? std::wstring{L"添加"} : utf8ToWide(tab->items[index].name);
+        const auto glyph = addTile ? std::wstring{L"+"} : itemGlyph(name);
+        const auto color = addTile ? 0x64748BU : itemColor(tab->items[index].type);
         const auto tile = toD2dRect(layout.items[index]);
         renderTarget_->FillRoundedRectangle(
             D2D1::RoundedRect(tile, cornerRadius, cornerRadius),
@@ -627,7 +700,7 @@ void LauncherWindow::render()
 
         winrt::com_ptr<ID2D1SolidColorBrush> iconBrush{};
         renderTarget_->CreateSolidColorBrush(
-            D2D1::ColorF(previewItems[index].color, 0.92F),
+            D2D1::ColorF(color, 0.92F),
             iconBrush.put());
         const auto iconRect = D2D1::RectF(
             tile.left + 14.0F,
@@ -638,15 +711,26 @@ void LauncherWindow::render()
             D2D1::RoundedRect(iconRect, 14.0F, 14.0F),
             iconBrush ? iconBrush.get() : elevatedBrush_.get());
         drawText(
-            previewItems[index].glyph,
+            glyph,
             iconRect,
             iconFormat_.get(),
             textBrush_.get());
         drawText(
-            previewItems[index].name,
+            name,
             D2D1::RectF(tile.left + 3.0F, tile.top + 54.0F, tile.right - 3.0F, tile.bottom - 4.0F),
             smallFormat_.get(),
-            index + 1 == previewItems.size() ? mutedTextBrush_.get() : textBrush_.get());
+            addTile ? mutedTextBrush_.get() : textBrush_.get());
+    }
+    if (tab && tab->items.empty()) {
+        drawText(
+            L"暂无条目",
+            D2D1::RectF(
+                gridBounds.left,
+                gridBounds.top + 92.0F,
+                gridBounds.right,
+                gridBounds.top + 128.0F),
+            bodyFormat_.get(),
+            mutedTextBrush_.get());
     }
     renderTarget_->PopAxisAlignedClip();
 
@@ -655,6 +739,27 @@ void LauncherWindow::render()
         discardDeviceResources();
     }
     EndPaint(window_, &paint);
+}
+
+const core::Tab* LauncherWindow::activeTab() const noexcept
+{
+    if (activeTabIndex_ >= document_.tabs.size()) {
+        return nullptr;
+    }
+    return &document_.tabs[activeTabIndex_];
+}
+
+std::size_t LauncherWindow::displayedTileCount() const noexcept
+{
+    const auto* tab = activeTab();
+    if (!tab) {
+        return 0;
+    }
+    const auto itemCount = tab->items.size();
+    if (itemCount >= maximumVisibleItems) {
+        return maximumVisibleItems;
+    }
+    return itemCount + 1U;
 }
 
 void LauncherWindow::drawText(

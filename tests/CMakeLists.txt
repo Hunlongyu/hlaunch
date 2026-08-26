@@ -84,3 +84,25 @@ target_link_libraries(
 )
 
 add_test(NAME PLAT-TRAY-001.lifecycle COMMAND hlaunch_tray_icon_tests)
+
+add_executable(hlaunch_shell_probe WIN32 shell_launch_probe.cpp)
+
+target_link_libraries(
+    hlaunch_shell_probe
+    PRIVATE
+        HLaunch::ProjectOptions
+        shell32
+)
+
+add_executable(hlaunch_shell_launcher_tests shell_launcher_tests.cpp)
+
+target_link_libraries(
+    hlaunch_shell_launcher_tests
+    PRIVATE
+        HLaunch::PlatformWindows
+        HLaunch::ProjectOptions
+        doctest::doctest
+)
+add_dependencies(hlaunch_shell_launcher_tests hlaunch_shell_probe)
+
+add_test(NAME PLAT-SHELL-001.launch COMMAND hlaunch_shell_launcher_tests)

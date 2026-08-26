@@ -2,6 +2,7 @@
 
 #include "infrastructure/filesystem/data_paths.h"
 #include "infrastructure/filesystem/data_store.h"
+#include "platform/windows/shell_launcher.h"
 
 #include <Ole2.h>
 #include <wil/resource.h>
@@ -82,16 +83,19 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
         return 4;
     }
 
-    // Load now to exercise the storage boundary. The visual-only scaffold does not yet
-    // bind these models to interactive controls.
     const auto config = infrastructure::filesystem::loadConfig(paths->configFile);
-    const auto items = infrastructure::filesystem::loadItems(paths->itemsFile);
+    auto items = infrastructure::filesystem::loadItems(paths->itemsFile);
     if (!config || !config->value || !items || !items->value) {
         showStartupError(L"无法读取 HLaunch 数据文件。");
         return 5;
     }
 
-    if (!launcher_.create(instance, options.windowEffects, options.showSearch)
+    if (!launcher_.create(
+            instance,
+            options.windowEffects,
+            options.showSearch,
+            std::move(*items->value),
+            [this](const core::LaunchItem& item) { launch(item); })
         || !createActivationWindow(instance)) {
         showStartupError(L"无法创建 HLaunch 窗口。");
         return 6;
@@ -249,6 +253,32 @@ void Application::execute(const platform::windows::ActivationCommand command)
         launcher_.toggle();
         break;
     }
+}
+
+void Application::launch(const core::LaunchItem& item)
+{
+    const auto result = platform::windows::launchItem(launcher_.handle(), item);
+    if (result) {
+        launcher_.hide();
+        return;
+    }
+    if (result.error().code == platform::windows::ShellLaunchErrorCode::Cancelled) {
+        return;
+    }
+
+    std::wstring message = result.error().code
+        == platform::windows::ShellLaunchErrorCode::InvalidUtf8
+        ? L"条目包含无效文本，无法启动。"
+        : L"Windows 无法启动该条目。";
+    if (result.error().systemCode != 0) {
+        message += L"\n\n系统错误码：";
+        message += std::to_wstring(result.error().systemCode);
+    }
+    MessageBoxW(
+        launcher_.handle(),
+        message.c_str(),
+        L"HLaunch 启动失败",
+        MB_OK | MB_ICONERROR);
 }
 
 } // namespace hlaunch::app

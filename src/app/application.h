@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app/command_line.h"
+#include "core/data_model.h"
 #include "platform/windows/global_hotkey.h"
 #include "platform/windows/screen_edge_activation.h"
 #include "platform/windows/single_instance.h"
@@ -26,6 +27,7 @@ private:
     LRESULT handleActivationMessage(UINT message, WPARAM wParam, LPARAM lParam);
     [[nodiscard]] bool createActivationWindow(HINSTANCE instance);
     void execute(platform::windows::ActivationCommand command);
+    void launch(const core::LaunchItem& item);
 
     std::optional<platform::windows::SingleInstance> singleInstance_{};
     ui::LauncherWindow launcher_{};

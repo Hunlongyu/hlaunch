@@ -113,6 +113,27 @@ TEST_CASE("PROD-GRID-001 launcher layout always retains at least one column")
     CHECK(layout.items.size() == 2);
 }
 
+TEST_CASE("PROD-GRID-001 launcher hit testing resolves items and tabs")
+{
+    const auto layout = hlaunch::ui::calculateLauncherLayout({420.0F, 640.0F, 3});
+
+    CHECK(hlaunch::ui::hitTestLauncherItem(
+        layout,
+        layout.items[1].x + 4.0F,
+        layout.items[1].y + 4.0F) == 1);
+    CHECK_FALSE(hlaunch::ui::hitTestLauncherItem(layout, 4.0F, 4.0F).has_value());
+    CHECK(hlaunch::ui::hitTestLauncherTab(
+        layout,
+        4,
+        layout.tabs.x + (layout.tabs.width * 0.625F),
+        layout.tabs.y + 4.0F) == 2);
+    CHECK_FALSE(hlaunch::ui::hitTestLauncherTab(
+        layout,
+        0,
+        layout.tabs.x + 4.0F,
+        layout.tabs.y + 4.0F).has_value());
+}
+
 TEST_CASE("UI-DRAG-001 interactive launcher regions never initiate window dragging")
 {
     const auto layout = hlaunch::ui::calculateLauncherLayout({420.0F, 640.0F, 25});

@@ -3,6 +3,7 @@
 #include "core/data_model.h"
 
 #include <cstddef>
+#include <optional>
 #include <vector>
 
 namespace hlaunch::ui {
@@ -83,6 +84,17 @@ struct ScreenEdgePlacementRequest {
 
 [[nodiscard]] bool isLauncherDragRegion(
     const LauncherLayout& layout,
+    float xDip,
+    float yDip) noexcept;
+
+[[nodiscard]] std::optional<std::size_t> hitTestLauncherItem(
+    const LauncherLayout& layout,
+    float xDip,
+    float yDip) noexcept;
+
+[[nodiscard]] std::optional<std::size_t> hitTestLauncherTab(
+    const LauncherLayout& layout,
+    std::size_t tabCount,
     float xDip,
     float yDip) noexcept;
 

@@ -106,6 +106,37 @@ bool isLauncherDragRegion(
         && !contains(layout.tabs, xDip, yDip);
 }
 
+std::optional<std::size_t> hitTestLauncherItem(
+    const LauncherLayout& layout,
+    const float xDip,
+    const float yDip) noexcept
+{
+    for (std::size_t index = 0; index < layout.items.size(); ++index) {
+        if (contains(layout.items[index], xDip, yDip)) {
+            return index;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<std::size_t> hitTestLauncherTab(
+    const LauncherLayout& layout,
+    const std::size_t tabCount,
+    const float xDip,
+    const float yDip) noexcept
+{
+    if (tabCount == 0 || !contains(layout.tabs, xDip, yDip)) {
+        return std::nullopt;
+    }
+    const float tabWidth = layout.tabs.width / static_cast<float>(tabCount);
+    if (tabWidth <= 0.0F) {
+        return std::nullopt;
+    }
+    return std::min(
+        static_cast<std::size_t>((xDip - layout.tabs.x) / tabWidth),
+        tabCount - 1U);
+}
+
 RectPixels calculateCenteredWindowRectangle(
     const RectPixels& workArea,
     const int windowWidth,

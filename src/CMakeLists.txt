@@ -98,6 +98,8 @@ add_library(
         platform/windows/global_hotkey.h
         platform/windows/screen_edge_activation.cpp
         platform/windows/screen_edge_activation.h
+        platform/windows/shell_launcher.cpp
+        platform/windows/shell_launcher.h
         platform/windows/single_instance.cpp
         platform/windows/single_instance.h
         platform/windows/tray_icon.cpp

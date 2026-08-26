@@ -4,7 +4,7 @@
 
 | ID | 需求 | 规范 | 最低证据 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| PROD-GRID-001 | Grid 优先、Tab 分类并支持跨 Tab 搜索 | `product-scope.md`、`launcher-ui.md` | UI 集成 + 键盘运行验证 | 部分验证（2026-08-26：静态 Grid、默认隐藏的底部附属搜索窗、贴底 Tab 与 DIP 单元测试；搜索与键盘交互未实现） |
+| PROD-GRID-001 | Grid 优先、Tab 分类并支持跨 Tab 搜索 | `product-scope.md`、`launcher-ui.md` | UI 集成 + 键盘运行验证 | 部分验证（2026-08-26：`items.json` Tab/Grid 绑定、鼠标分类切换、点击启动、空状态、底部附属搜索窗与 DIP 命中测试通过；搜索、键盘和滚动交互未实现） |
 | UI-EFFECT-001 | 无边框窗口支持系统材质、表面 alpha 与整体透明度，并可安全降级 | `launcher-ui.md`、`themes.md` | 参数单元测试 + 各材质 Windows 运行截图 + 高对比度验证 | 部分验证（2026-08-26：参数测试、四种材质窗口创建与 DWM 属性读取通过；材质截图和高对比度未验证） |
 | UI-DRAG-001 | 除搜索、Grid、Tab 和关闭按钮外的客户区可拖动无边框窗口 | `launcher-ui.md` | 命中测试单元测试 + Windows 拖拽运行验证 | 部分验证（2026-08-26：DIP 单元测试与真实窗口 7 点 `WM_NCHITTEST` 探测通过；实际鼠标移动结果待人工确认） |
 | ACT-HOTKEY-001 | 默认启用 `Alt+Space`，冲突可恢复 | `activation-hotkey.md` | 单元 + Windows 运行验证 | 部分验证（2026-08-26：结构化映射与冲突单元测试、真实 `RegisterHotKey`/`SendInput`/`WM_HOTKEY` 集成测试、Debug 默认隐藏与 Toggle 居中运行验证；设置页与物理键盘矩阵未完成） |
@@ -12,6 +12,7 @@
 | DATA-CONFIG-001 | schema v1、校验、迁移与原子写入 | `data-and-config.md`、`schemas/` | 配置语料 + 故障注入集成测试 | 部分验证（2026-08-26：memory-codec + storage 故障保护；迁移与异步保存未完成） |
 | PLAT-SINGLE-001 | Mutex 所有权与隐藏窗口激活 | `windows-integration.md` | 双实例 + 完整性级别运行验证 | 部分验证（2026-08-26：同级双实例 hide/show 运行通过；UIPI 矩阵未验证） |
 | PLAT-TRAY-001 | 托盘显示/隐藏、设置、退出与 Explorer 恢复 | `windows-integration.md` | 生命周期集成测试 + Explorer 运行验证 | 部分验证（2026-08-26：真实图标矩形、选择回调 Toggle 和生命周期测试通过；设置页、菜单人工操作与 Explorer 重启验证未完成） |
+| PLAT-SHELL-001 | 目标、逻辑参数与工作目录分离并通过 Shell 启动 | `windows-integration.md`、`data-and-config.md` | 参数编解码集成测试 + Windows 运行验证 | 部分验证（2026-08-26：引号边界、无效 UTF-8、真实 `ShellExecuteExW` 参数回读及两 Tab 点击启动通过；文件/文件夹/URL、UAC 取消和失效目标矩阵未完成） |
 | UIA-001 | 键盘和 UI Automation 可操作 | `accessibility.md` | Narrator + Accessibility Insights | 计划 |
 | BUILD-DEPS-001 | 依赖固定 commit 且只进入允许目标 | `engineering.md` | MSVC Configure/Build/CTest + cache 检查 | 已验证（2026-08-20 Debug） |
 | RELEASE-001 | x64 `/MT` 单 EXE、无第三方运行时 DLL | `engineering.md`、`quality.md` | 干净 Release 构建 + 二进制依赖检查 | 部分验证（2026-08-26：Release 编译 + 仅系统 DLL；干净发布演练未完成） |

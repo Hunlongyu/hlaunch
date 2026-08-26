@@ -17,7 +17,7 @@ HLaunch 是一款面向 Windows 11 x64 的轻量级 Grid 快速启动器，并�
 
 ## 当前状态
 
-当前已经生成可运行的原生 `HLaunch.exe`：包含 Core 数据模型、独立 Glaze 适配层、标准/便携数据目录、原子写入与 `.bak` 恢复、用户隔离的单实例应用壳、全局快捷键、默认关闭的屏幕边缘停留唤起和托盘入口，以及无边框竖向 Direct2D Launcher 界面骨架。窗口默认使用 Acrylic，并支持 Solid、Mica、Acrylic、Tabbed 系统背景、半透明界面表面与 30%–100% 整体透明度；默认隐藏的搜索框使用跟随主窗口的底部附属窗，出现时不改变 Grid 布局。除 Grid、Tab 和关闭按钮外的主客户区可拖动窗口。当前界面只用于确认视觉结构；搜索、Tab、Grid、添加按钮尚未接入完整交互，Shell 启动、拖放、真实图标、设置和 UI Automation 仍是后续工作。
+当前已经生成可运行的原生 `HLaunch.exe`：包含 Core 数据模型、独立 Glaze 适配层、标准/便携数据目录、原子写入与 `.bak` 恢复、用户隔离的单实例应用壳、全局快捷键、默认关闭的屏幕边缘停留唤起和托盘入口，以及无边框竖向 Direct2D Launcher。窗口默认使用 Acrylic，并支持 Solid、Mica、Acrylic、Tabbed 系统背景、半透明界面表面与 30%–100% 整体透明度；默认隐藏的搜索框使用跟随主窗口的底部附属窗，出现时不改变 Grid 布局。除 Grid、Tab 和关闭按钮外的主客户区可拖动窗口。Tab 和 Grid 已读取 `items.json`，鼠标可切换分类并通过 Windows Shell 启动当前条目。搜索输入、键盘导航、滚动/分页、添加与编辑、拖放、真实图标、设置和 UI Automation 仍是后续工作。
 
 ## 准备构建环境
 
