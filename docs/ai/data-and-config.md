@@ -25,7 +25,7 @@ V1 设计契约使用 UTF-8 JSON，根对象包含整数 `schemaVersion: 1`。�
   "schemaVersion": 1,
   "tabs": [{
     "id": "72976493-b090-4ca3-bbb8-d1d97d9f4eaf",
-    "name": "常用",
+    "name": "默认",
     "items": [{
       "id": "fb462c0f-3050-4ddd-a1bc-fbb66008fd9e",
       "type": "application",

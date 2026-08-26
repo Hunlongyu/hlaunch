@@ -111,7 +111,7 @@ TEST_CASE("PROD-ITEM-001 a missing items file provides an editable default tab")
     REQUIRE(loaded->value.has_value());
     CHECK(loaded->source == hlaunch::infrastructure::filesystem::LoadSource::Defaults);
     REQUIRE(loaded->value->tabs.size() == 1U);
-    CHECK(loaded->value->tabs.front().name == "常用");
+    CHECK(loaded->value->tabs.front().name == "默认");
     CHECK(loaded->value->tabs.front().items.empty());
     CHECK(hlaunch::core::validateItemsDocument(*loaded->value).empty());
 }

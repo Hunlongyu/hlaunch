@@ -12,7 +12,7 @@ core::ItemsDocument defaultItemsDocument()
     return core::ItemsDocument{
         .tabs = {core::Tab{
             .id = "42f8b39d-18ba-47b0-9dbe-e7836ef69f49",
-            .name = "常用",
+            .name = "默认",
         }},
     };
 }
