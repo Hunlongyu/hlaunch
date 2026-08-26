@@ -6,6 +6,7 @@
 #include "core/search_index.h"
 #include "platform/windows/drop_item_resolver.h"
 #include "platform/windows/drop_target.h"
+#include "platform/windows/icon_loader.h"
 #include "platform/windows/window_effects.h"
 #include "ui/item_editor_dialog.h"
 #include "ui/search_window.h"
@@ -20,6 +21,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace hlaunch::ui {
@@ -89,6 +91,8 @@ private:
         POINTL screenPoint);
     void applyDropImport(platform::windows::DropImportResult result);
     void shutdownDropServices() noexcept;
+    void applyIconLoadResult(platform::windows::IconLoadResult result);
+    void shutdownIconServices() noexcept;
     void rebuildSearchIndex();
     void activateFocusedItem();
     void changeActiveTab(std::size_t tabIndex);
@@ -105,6 +109,17 @@ private:
 
         bool operator==(const InternalDropTarget&) const = default;
     };
+    struct CachedItemIcon {
+        std::string sourceKey{};
+        std::uint32_t requestedPixelSize{};
+        std::uint32_t width{};
+        std::uint32_t height{};
+        std::vector<std::uint8_t> pixels{};
+        winrt::com_ptr<ID2D1Bitmap> bitmap{};
+        std::uint64_t lastUsed{};
+        bool pending{};
+        bool failed{};
+    };
     [[nodiscard]] std::optional<core::ItemLocation>
     itemLocationForDisplayedIndex(std::size_t index) const noexcept;
     [[nodiscard]] std::optional<DisplayedItem> displayedItem(std::size_t index) const noexcept;
@@ -115,6 +130,7 @@ private:
     void ensureFocusedItemVisible();
     [[nodiscard]] std::size_t visibleItemCount() const;
     [[nodiscard]] std::size_t displayedTileCount() const;
+    [[nodiscard]] ID2D1Bitmap* itemIconBitmap(const core::LaunchItem& item);
     void drawText(
         std::wstring_view text,
         const D2D1_RECT_F& bounds,
@@ -144,6 +160,9 @@ private:
     ItemEditorHandler itemEditorHandler_{};
     platform::windows::DropTarget dropTarget_{};
     std::unique_ptr<platform::windows::DropItemResolver> dropResolver_{};
+    std::unique_ptr<platform::windows::IconLoader> iconLoader_{};
+    std::unordered_map<std::string, CachedItemIcon> iconCache_{};
+    std::uint64_t iconCacheUseSequence_{};
     SearchWindow searchWindow_{};
     winrt::com_ptr<ID2D1Factory> d2dFactory_{};
     winrt::com_ptr<IDWriteFactory> writeFactory_{};

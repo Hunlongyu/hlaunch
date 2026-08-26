@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <iterator>
 #include <memory>
 #include <new>
 #include <string>
@@ -29,7 +30,9 @@ constexpr int launcherWidthDip = 420;
 constexpr int launcherHeightDip = 640;
 
 constexpr std::size_t maximumVisibleItems = 25;
+constexpr std::size_t maximumIconCacheEntries = 128;
 constexpr UINT dropImportCompletedMessage = WM_APP + 0x43U;
+constexpr UINT iconLoadCompletedMessage = WM_APP + 0x44U;
 constexpr UINT_PTR editItemMenuCommand = 1U;
 constexpr UINT_PTR deleteItemMenuCommand = 2U;
 
@@ -90,6 +93,18 @@ std::uint32_t itemColor(const core::ItemType type) noexcept
     return 0x64748B;
 }
 
+std::string iconSourceKey(const core::LaunchItem& item)
+{
+    std::string result{};
+    result.reserve(item.target.size() + (item.icon ? item.icon->size() : 0U) + 1U);
+    if (item.icon) {
+        result.append(*item.icon);
+    }
+    result.push_back('\0');
+    result.append(item.target);
+    return result;
+}
+
 D2D1_RECT_F toD2dRect(const RectDip& rectangle)
 {
     return D2D1::RectF(
@@ -103,6 +118,7 @@ D2D1_RECT_F toD2dRect(const RectDip& rectangle)
 
 LauncherWindow::~LauncherWindow()
 {
+    shutdownIconServices();
     shutdownDropServices();
     if (window_) {
         DestroyWindow(window_);
@@ -195,6 +211,27 @@ bool LauncherWindow::create(
             })) {
         dropResolver_.reset();
         return false;
+    }
+    try {
+        const HWND notificationWindow = window_;
+        iconLoader_ = std::make_unique<platform::windows::IconLoader>(
+            [notificationWindow](platform::windows::IconLoadResult result) {
+                auto payload = std::unique_ptr<platform::windows::IconLoadResult>{
+                    new (std::nothrow) platform::windows::IconLoadResult{std::move(result)}};
+                if (!payload) {
+                    return;
+                }
+                if (PostMessageW(
+                        notificationWindow,
+                        iconLoadCompletedMessage,
+                        0,
+                        reinterpret_cast<LPARAM>(payload.get()))) { // NOLINT(performance-no-int-to-ptr): Internal message transfers this heap result to the UI thread.
+                    payload.release(); // NOLINT(bugprone-unused-return-value,clang-analyzer-cplusplus.NewDeleteLeaks): The posted UI message owns and deletes the result.
+                }
+            });
+    }
+    catch (...) {
+        iconLoader_.reset();
     }
     searchVisible_ = showSearch;
     return true;
@@ -601,6 +638,14 @@ LRESULT LauncherWindow::handleMessage(
         }
         return 0;
     }
+    case iconLoadCompletedMessage: {
+        auto result = std::unique_ptr<platform::windows::IconLoadResult>{
+            reinterpret_cast<platform::windows::IconLoadResult*>(lParam)}; // NOLINT(performance-no-int-to-ptr): Internal message owns this heap result.
+        if (result) {
+            applyIconLoadResult(std::move(*result));
+        }
+        return 0;
+    }
     case WM_SIZE:
         if (renderTarget_ && wParam != SIZE_MINIMIZED) {
             renderTarget_->Resize(D2D1::SizeU(LOWORD(lParam), HIWORD(lParam)));
@@ -639,11 +684,13 @@ LRESULT LauncherWindow::handleMessage(
     }
     case WM_CLOSE:
         cancelItemDrag();
+        shutdownIconServices();
         shutdownDropServices();
         DestroyWindow(window_);
         return 0;
     case WM_DESTROY:
         cancelItemDrag();
+        shutdownIconServices();
         shutdownDropServices();
         window_ = nullptr;
         PostQuitMessage(0);
@@ -798,6 +845,9 @@ bool LauncherWindow::createDeviceResources()
 
 void LauncherWindow::discardDeviceResources() noexcept
 {
+    for (auto& cached : iconCache_) {
+        cached.second.bitmap = nullptr;
+    }
     borderBrush_ = nullptr;
     mutedTextBrush_ = nullptr;
     textBrush_ = nullptr;
@@ -987,23 +1037,35 @@ void LauncherWindow::render()
                 2.0F);
         }
 
-        winrt::com_ptr<ID2D1SolidColorBrush> iconBrush{};
-        renderTarget_->CreateSolidColorBrush(
-            D2D1::ColorF(color, 0.92F),
-            iconBrush.put());
         const auto iconRect = D2D1::RectF(
             tile.left + 14.0F,
             tile.top + 8.0F,
             tile.right - 14.0F,
             tile.top + 48.0F);
-        renderTarget_->FillRoundedRectangle(
-            D2D1::RoundedRect(iconRect, 14.0F, 14.0F),
-            iconBrush ? iconBrush.get() : elevatedBrush_.get());
-        drawText(
-            glyph,
-            iconRect,
-            iconFormat_.get(),
-            textBrush_.get());
+        auto* realIcon = !addTile && displayed && displayed->item
+            ? itemIconBitmap(*displayed->item)
+            : nullptr;
+        if (realIcon) {
+            renderTarget_->DrawBitmap(
+                realIcon,
+                iconRect,
+                1.0F,
+                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        }
+        else {
+            winrt::com_ptr<ID2D1SolidColorBrush> iconBrush{};
+            renderTarget_->CreateSolidColorBrush(
+                D2D1::ColorF(color, 0.92F),
+                iconBrush.put());
+            renderTarget_->FillRoundedRectangle(
+                D2D1::RoundedRect(iconRect, 14.0F, 14.0F),
+                iconBrush ? iconBrush.get() : elevatedBrush_.get());
+            drawText(
+                glyph,
+                iconRect,
+                iconFormat_.get(),
+                textBrush_.get());
+        }
         if (filtering && displayed && displayed->tab) {
             drawText(
                 name,
@@ -1725,6 +1787,42 @@ void LauncherWindow::shutdownDropServices() noexcept
     }
 }
 
+void LauncherWindow::applyIconLoadResult(platform::windows::IconLoadResult result)
+{
+    const auto cached = iconCache_.find(result.itemId);
+    if (cached == iconCache_.end()
+        || cached->second.sourceKey != result.sourceKey
+        || cached->second.requestedPixelSize != result.requestedPixelSize) {
+        return;
+    }
+
+    auto& entry = cached->second;
+    entry.pending = false;
+    entry.failed = !result.succeeded;
+    entry.width = result.width;
+    entry.height = result.height;
+    entry.pixels = std::move(result.pixels);
+    entry.bitmap = nullptr;
+    InvalidateRect(window_, nullptr, FALSE);
+}
+
+void LauncherWindow::shutdownIconServices() noexcept
+{
+    iconLoader_.reset();
+    if (!window_) {
+        return;
+    }
+    MSG pending{};
+    while (PeekMessageW(
+        &pending,
+        window_,
+        iconLoadCompletedMessage,
+        iconLoadCompletedMessage,
+        PM_REMOVE)) {
+        delete reinterpret_cast<platform::windows::IconLoadResult*>(pending.lParam); // NOLINT(performance-no-int-to-ptr): This message owns the heap result.
+    }
+}
+
 void LauncherWindow::rebuildSearchIndex()
 {
     searchIndex_.rebuild(document_, [](const std::string_view name) {
@@ -1928,6 +2026,72 @@ std::size_t LauncherWindow::displayedTileCount() const
         return itemCount;
     }
     return itemCount + 1U;
+}
+
+ID2D1Bitmap* LauncherWindow::itemIconBitmap(const core::LaunchItem& item)
+{
+    const auto sourceKey = iconSourceKey(item);
+    const auto requestedPixelSize = static_cast<std::uint32_t>(std::clamp(
+        MulDiv(48, static_cast<int>(dpi_), 96),
+        16,
+        256));
+    auto cached = iconCache_.find(item.id);
+    if (cached == iconCache_.end()
+        || cached->second.sourceKey != sourceKey
+        || cached->second.requestedPixelSize != requestedPixelSize) {
+        if (cached == iconCache_.end() && iconCache_.size() >= maximumIconCacheEntries) {
+            auto oldest = iconCache_.begin();
+            for (auto candidate = std::next(iconCache_.begin());
+                 candidate != iconCache_.end(); ++candidate) {
+                if (candidate->second.lastUsed < oldest->second.lastUsed) {
+                    oldest = candidate;
+                }
+            }
+            if (oldest != iconCache_.end()) {
+                iconCache_.erase(oldest);
+            }
+        }
+        CachedItemIcon replacement{
+            .sourceKey = sourceKey,
+            .requestedPixelSize = requestedPixelSize,
+            .lastUsed = ++iconCacheUseSequence_,
+            .pending = iconLoader_ != nullptr,
+            .failed = iconLoader_ == nullptr,
+        };
+        cached = iconCache_.insert_or_assign(item.id, std::move(replacement)).first;
+        if (iconLoader_) {
+            iconLoader_->submit({
+                .itemId = item.id,
+                .sourceKey = sourceKey,
+                .target = item.target,
+                .icon = item.icon,
+                .pixelSize = requestedPixelSize,
+            });
+        }
+    }
+
+    auto& entry = cached->second;
+    entry.lastUsed = ++iconCacheUseSequence_;
+    if (entry.pending || entry.failed || entry.pixels.empty() || !renderTarget_) {
+        return nullptr;
+    }
+    if (!entry.bitmap) {
+        const auto properties = D2D1::BitmapProperties(
+            D2D1::PixelFormat(
+                DXGI_FORMAT_B8G8R8A8_UNORM,
+                D2D1_ALPHA_MODE_PREMULTIPLIED),
+            static_cast<float>(dpi_),
+            static_cast<float>(dpi_));
+        if (FAILED(renderTarget_->CreateBitmap(
+                D2D1::SizeU(entry.width, entry.height),
+                entry.pixels.data(),
+                entry.width * 4U,
+                properties,
+                entry.bitmap.put()))) {
+            return nullptr;
+        }
+    }
+    return entry.bitmap.get();
 }
 
 void LauncherWindow::drawText(

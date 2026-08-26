@@ -125,6 +125,12 @@ add_library(
         platform/windows/drop_target.h
         platform/windows/global_hotkey.cpp
         platform/windows/global_hotkey.h
+        platform/windows/icon_loader.cpp
+        platform/windows/icon_loader.h
+        platform/windows/icon_pixel_converter.cpp
+        platform/windows/icon_pixel_converter.h
+        platform/windows/shell_icon_extractor.cpp
+        platform/windows/shell_icon_extractor.h
         platform/windows/screen_edge_activation.cpp
         platform/windows/screen_edge_activation.h
         platform/windows/search_text.cpp
@@ -162,6 +168,7 @@ target_link_libraries(
         shell32
         shlwapi
         user32
+        windowscodecs
 )
 
 add_library(

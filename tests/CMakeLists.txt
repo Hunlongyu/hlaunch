@@ -84,6 +84,18 @@ target_link_libraries(
 
 add_test(NAME PROD-DROP-001.resolve COMMAND hlaunch_drop_item_resolver_tests)
 
+add_executable(hlaunch_icon_loader_tests icon_loader_tests.cpp)
+
+target_link_libraries(
+    hlaunch_icon_loader_tests
+    PRIVATE
+        HLaunch::PlatformWindows
+        HLaunch::ProjectOptions
+        doctest::doctest
+)
+
+add_test(NAME UI-ICON-001.extract-and-cache COMMAND hlaunch_icon_loader_tests)
+
 add_executable(hlaunch_drop_target_tests drop_target_tests.cpp)
 
 target_link_libraries(
