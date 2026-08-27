@@ -1305,17 +1305,6 @@ void LauncherWindow::render()
                 2.0F),
             accentBrush_.get());
     }
-    if (filtering && searchResults_.empty()) {
-        drawText(
-            L"没有找到匹配项",
-            D2D1::RectF(
-                gridBounds.left,
-                gridBounds.top + 92.0F,
-                gridBounds.right,
-                gridBounds.top + 128.0F),
-            bodyFormat_.get(),
-            mutedTextBrush_.get());
-    }
     renderTarget_->PopAxisAlignedClip();
 
     const auto drawResult = renderTarget_->EndDraw();
