@@ -139,6 +139,8 @@ add_library(
         platform/windows/shell_launcher.h
         platform/windows/single_instance.cpp
         platform/windows/single_instance.h
+        platform/windows/startup_registration.cpp
+        platform/windows/startup_registration.h
         platform/windows/tray_icon.cpp
         platform/windows/tray_icon.h
         platform/windows/uuid.cpp

@@ -15,6 +15,7 @@ public:
     using AppearanceChangedHandler = std::function<bool(const core::AppearanceConfig&)>;
     using ActivationChangedHandler = std::function<std::expected<void, std::wstring>(
         const core::ActivationConfig&)>;
+    using StartupChangedHandler = std::function<std::expected<void, std::wstring>(bool)>;
 
     SettingsWindow() = default;
     ~SettingsWindow();
@@ -27,8 +28,10 @@ public:
         HWND owner,
         const core::AppearanceConfig& appearance,
         const core::ActivationConfig& activation,
+        std::expected<bool, std::wstring> startupEnabled,
         AppearanceChangedHandler appearanceChangedHandler,
-        ActivationChangedHandler activationChangedHandler);
+        ActivationChangedHandler activationChangedHandler,
+        StartupChangedHandler startupChangedHandler);
     void hide();
     void setAppearance(const core::AppearanceConfig& appearance);
     void setActivation(const core::ActivationConfig& activation);
@@ -45,8 +48,10 @@ private:
     void positionOverOwner(HWND owner);
     [[nodiscard]] bool applyAppearanceFromControls(bool includeOpacity);
     [[nodiscard]] bool applyActivationFromControls();
+    [[nodiscard]] bool applyStartupFromControls();
     void syncControls();
     void syncActivationControls();
+    void syncStartupControls();
     void updateActivationEnabledState();
 
     HWND window_{};
@@ -61,12 +66,32 @@ private:
     HWND winCheck_{};
     HWND hotkeyKeyCombo_{};
     HWND screenEdgeEnabledCheck_{};
+    HWND leftZoneCheck_{};
+    HWND rightZoneCheck_{};
+    HWND topZoneCheck_{};
+    HWND bottomZoneCheck_{};
+    HWND topLeftZoneCheck_{};
+    HWND topRightZoneCheck_{};
+    HWND bottomLeftZoneCheck_{};
+    HWND bottomRightZoneCheck_{};
+    HWND edgeModeCombo_{};
+    HWND thicknessEdit_{};
+    HWND cornerSizeEdit_{};
+    HWND dwellEdit_{};
+    HWND pollEdit_{};
+    HWND cooldownEdit_{};
     HWND fullscreenCheck_{};
     HWND activationStatusText_{};
+    HWND startupEnabledCheck_{};
+    HWND startupApplyButton_{};
+    HWND startupStatusText_{};
     core::AppearanceConfig appearance_{};
     core::ActivationConfig activation_{};
+    bool startupEnabled_{};
+    std::wstring startupLoadError_{};
     AppearanceChangedHandler appearanceChangedHandler_{};
     ActivationChangedHandler activationChangedHandler_{};
+    StartupChangedHandler startupChangedHandler_{};
 };
 
 } // namespace hlaunch::ui

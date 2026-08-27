@@ -37,10 +37,13 @@ private:
     [[nodiscard]] bool changeAppearance(const core::AppearanceConfig& appearance);
     [[nodiscard]] std::expected<void, std::wstring> changeActivation(
         const core::ActivationConfig& activation);
+    [[nodiscard]] std::expected<void, std::wstring> changeStartup(bool enabled);
 
     HINSTANCE instance_{};
     core::ApplicationConfig config_{};
+    std::filesystem::path executablePath_{};
     std::filesystem::path configFile_{};
+    bool forcePortable_{};
     platform::windows::WindowEffects windowEffects_{};
     std::optional<platform::windows::SingleInstance> singleInstance_{};
     std::optional<infrastructure::filesystem::ItemsSaveWorker> itemsSaver_{};

@@ -154,12 +154,14 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
 
     auto selectedAppearance = hlaunch::core::AppearanceConfig{};
     auto selectedActivation = hlaunch::core::ActivationConfig{};
+    bool selectedStartup{};
     hlaunch::ui::SettingsWindow settings{};
     REQUIRE(settings.show(
         GetModuleHandleW(nullptr),
         nullptr,
         hlaunch::core::AppearanceConfig{},
         hlaunch::core::ActivationConfig{},
+        false,
         [&selectedAppearance](const hlaunch::core::AppearanceConfig& appearance) {
             selectedAppearance = appearance;
             return true;
@@ -167,6 +169,10 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
         [&selectedActivation](const hlaunch::core::ActivationConfig& activation)
             -> std::expected<void, std::wstring> {
             selectedActivation = activation;
+            return {};
+        },
+        [&selectedStartup](const bool enabled) -> std::expected<void, std::wstring> {
+            selectedStartup = enabled;
             return {};
         }));
     REQUIRE(settings.handle() != nullptr);
@@ -202,16 +208,51 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
     const auto hotkeyKey = GetDlgItem(settings.handle(), 2015);
     const auto edgeEnabled = GetDlgItem(settings.handle(), 2016);
     const auto fullscreenCheck = GetDlgItem(settings.handle(), 2017);
+    const auto leftZone = GetDlgItem(settings.handle(), 2019);
+    const auto rightZone = GetDlgItem(settings.handle(), 2020);
+    const auto edgeMode = GetDlgItem(settings.handle(), 2027);
+    const auto thickness = GetDlgItem(settings.handle(), 2028);
+    const auto cornerSize = GetDlgItem(settings.handle(), 2029);
+    const auto dwell = GetDlgItem(settings.handle(), 2030);
+    const auto poll = GetDlgItem(settings.handle(), 2031);
+    const auto cooldown = GetDlgItem(settings.handle(), 2032);
+    const auto startupEnabled = GetDlgItem(settings.handle(), 2040);
     REQUIRE(hotkeyEnabled != nullptr);
     REQUIRE(altCheck != nullptr);
     REQUIRE(controlCheck != nullptr);
     REQUIRE(hotkeyKey != nullptr);
     REQUIRE(edgeEnabled != nullptr);
     REQUIRE(fullscreenCheck != nullptr);
+    REQUIRE(leftZone != nullptr);
+    REQUIRE(rightZone != nullptr);
+    REQUIRE(edgeMode != nullptr);
+    REQUIRE(thickness != nullptr);
+    REQUIRE(cornerSize != nullptr);
+    REQUIRE(dwell != nullptr);
+    REQUIRE(poll != nullptr);
+    REQUIRE(cooldown != nullptr);
+    REQUIRE(startupEnabled != nullptr);
+    const auto closeButton = GetDlgItem(settings.handle(), 2002);
+    REQUIRE(closeButton != nullptr);
+    RECT settingsClient{};
+    RECT closeBounds{};
+    RECT startupBounds{};
+    REQUIRE(GetClientRect(settings.handle(), &settingsClient));
+    REQUIRE(GetWindowRect(closeButton, &closeBounds));
+    REQUIRE(GetWindowRect(startupEnabled, &startupBounds));
+    MapWindowPoints(nullptr, settings.handle(),
+        reinterpret_cast<POINT*>(&closeBounds), 2);
+    MapWindowPoints(nullptr, settings.handle(),
+        reinterpret_cast<POINT*>(&startupBounds), 2);
+    CHECK(closeBounds.bottom <= settingsClient.bottom);
+    CHECK(startupBounds.bottom <= settingsClient.bottom);
     CHECK(IsDlgButtonChecked(settings.handle(), 2010) == BST_CHECKED);
     CHECK(IsDlgButtonChecked(settings.handle(), 2011) == BST_CHECKED);
     CHECK(IsDlgButtonChecked(settings.handle(), 2016) == BST_UNCHECKED);
     CHECK_FALSE(IsWindowEnabled(fullscreenCheck));
+    CHECK_FALSE(IsWindowEnabled(leftZone));
+    CHECK(IsDlgButtonChecked(settings.handle(), 2019) == BST_CHECKED);
+    CHECK(IsDlgButtonChecked(settings.handle(), 2040) == BST_UNCHECKED);
 
     CheckDlgButton(settings.handle(), 2011, BST_UNCHECKED);
     CheckDlgButton(settings.handle(), 2012, BST_CHECKED);
@@ -224,6 +265,19 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
     SendMessageW(settings.handle(), WM_COMMAND,
         MAKEWPARAM(2016, BN_CLICKED), reinterpret_cast<LPARAM>(edgeEnabled));
     CHECK(IsWindowEnabled(fullscreenCheck));
+    CHECK(IsWindowEnabled(leftZone));
+    CheckDlgButton(settings.handle(), 2020, BST_CHECKED);
+    SendMessageW(edgeMode, CB_SETCURSEL, 1, 0);
+    SetWindowTextW(thickness, L"6.5");
+    SetWindowTextW(cornerSize, L"24");
+    SetWindowTextW(dwell, L"99");
+    SetWindowTextW(poll, L"35");
+    SetWindowTextW(cooldown, L"900");
+    SendMessageW(settings.handle(), WM_COMMAND,
+        MAKEWPARAM(2018, BN_CLICKED), 0);
+    CHECK_FALSE(selectedActivation.screenEdge.enabled);
+    CHECK(GetFocus() == dwell);
+    SetWindowTextW(dwell, L"450");
     SendMessageW(settings.handle(), WM_COMMAND,
         MAKEWPARAM(2018, BN_CLICKED), 0);
     CHECK(selectedActivation.hotkey.enabled);
@@ -231,6 +285,22 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
         == std::vector{hlaunch::core::HotkeyModifier::Control});
     CHECK(selectedActivation.hotkey.key == "B");
     CHECK(selectedActivation.screenEdge.enabled);
+    CHECK(selectedActivation.screenEdge.zones
+        == std::vector{
+            hlaunch::core::ScreenEdgeZone::Left,
+            hlaunch::core::ScreenEdgeZone::Right,
+        });
+    CHECK(selectedActivation.screenEdge.edgeMode
+        == hlaunch::core::ScreenEdgeMode::EveryMonitor);
+    CHECK(selectedActivation.screenEdge.thicknessDip == doctest::Approx(6.5));
+    CHECK(selectedActivation.screenEdge.cornerSizeDip == doctest::Approx(24.0));
+    CHECK(selectedActivation.screenEdge.dwellMs == 450);
+    CHECK(selectedActivation.screenEdge.pollMs == 35);
+    CHECK(selectedActivation.screenEdge.cooldownMs == 900);
+
+    CheckDlgButton(settings.handle(), 2040, BST_CHECKED);
+    SendMessageW(settings.handle(), WM_COMMAND, MAKEWPARAM(2041, BN_CLICKED), 0);
+    CHECK(selectedStartup);
 
     settings.hide();
     CHECK_FALSE(settings.isVisible());
@@ -239,6 +309,7 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
         nullptr,
         hlaunch::core::AppearanceConfig{},
         hlaunch::core::ActivationConfig{},
+        true,
         [&selectedAppearance](const hlaunch::core::AppearanceConfig& appearance) {
             selectedAppearance = appearance;
             return true;
@@ -246,6 +317,10 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
         [&selectedActivation](const hlaunch::core::ActivationConfig& activation)
             -> std::expected<void, std::wstring> {
             selectedActivation = activation;
+            return {};
+        },
+        [&selectedStartup](const bool enabled) -> std::expected<void, std::wstring> {
+            selectedStartup = enabled;
             return {};
         }));
     CHECK(settings.handle() == initialWindow);

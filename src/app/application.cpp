@@ -5,6 +5,7 @@
 #include "infrastructure/filesystem/data_store.h"
 #include "infrastructure/logging/diagnostic_log.h"
 #include "platform/windows/shell_launcher.h"
+#include "platform/windows/startup_registration.h"
 
 #include <Ole2.h>
 #include <wil/resource.h>
@@ -124,6 +125,8 @@ platform::windows::WindowEffects windowEffectsFromAppearance(
 int Application::run(const HINSTANCE instance, const StartupOptions& options)
 {
     instance_ = instance;
+    executablePath_ = executablePath();
+    forcePortable_ = options.portable;
     SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     auto acquiredInstance = platform::windows::SingleInstance::acquire();
@@ -146,7 +149,7 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
     const auto oleCleanup = wil::scope_exit([] { OleUninitialize(); });
 
     const auto paths = infrastructure::filesystem::resolveDataPaths({
-        .executablePath = executablePath(),
+        .executablePath = executablePath_,
         .forcePortable = options.portable,
     });
     if (!paths) {
@@ -533,16 +536,34 @@ void Application::launch(const core::LaunchItem& item)
 
 void Application::showSettings()
 {
+    std::expected<bool, std::wstring> startupEnabled{false};
+    const auto startupState = platform::windows::isStartupEnabled();
+    if (startupState) {
+        startupEnabled = *startupState;
+    }
+    else {
+        infrastructure::logging::writeSystemError(
+            infrastructure::logging::Level::Warning,
+            "startup_registration_query_failed",
+            startupState.error().systemCode);
+        startupEnabled = std::unexpected(
+            L"无法读取当前用户开机启动状态，系统错误码："
+            + std::to_wstring(startupState.error().systemCode));
+    }
     if (!settings_.show(
             instance_,
             launcher_.handle(),
             config_.appearance,
             config_.activation,
+            std::move(startupEnabled),
             [this](const core::AppearanceConfig& appearance) {
                 return changeAppearance(appearance);
             },
             [this](const core::ActivationConfig& activation) {
                 return changeActivation(activation);
+            },
+            [this](const bool enabled) {
+                return changeStartup(enabled);
             })) {
         MessageBoxW(
             launcher_.handle(),
@@ -550,6 +571,25 @@ void Application::showSettings()
             L"HLaunch 设置",
             MB_OK | MB_ICONERROR);
     }
+}
+
+std::expected<void, std::wstring> Application::changeStartup(const bool enabled)
+{
+    const auto result = platform::windows::setStartupEnabled(
+        executablePath_, forcePortable_, enabled);
+    if (!result) {
+        infrastructure::logging::writeSystemError(
+            infrastructure::logging::Level::Error,
+            "startup_registration_change_failed",
+            result.error().systemCode);
+        return std::unexpected(
+            L"无法更新开机启动设置，系统错误码："
+            + std::to_wstring(result.error().systemCode));
+    }
+    infrastructure::logging::write(
+        infrastructure::logging::Level::Info,
+        enabled ? "startup_registration_enabled" : "startup_registration_disabled");
+    return {};
 }
 
 std::expected<void, std::wstring> Application::changeActivation(

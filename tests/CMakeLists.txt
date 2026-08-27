@@ -134,6 +134,18 @@ target_link_libraries(
 
 add_test(NAME ACT-HOTKEY-001.registration COMMAND hlaunch_global_hotkey_tests)
 
+add_executable(hlaunch_startup_registration_tests startup_registration_tests.cpp)
+
+target_link_libraries(
+    hlaunch_startup_registration_tests
+    PRIVATE
+        HLaunch::PlatformWindows
+        HLaunch::ProjectOptions
+        doctest::doctest
+)
+
+add_test(NAME PLAT-AUTOSTART-001.registry COMMAND hlaunch_startup_registration_tests)
+
 add_executable(hlaunch_screen_edge_tests screen_edge_tests.cpp)
 
 target_link_libraries(
