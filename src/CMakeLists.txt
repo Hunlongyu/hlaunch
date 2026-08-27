@@ -267,6 +267,7 @@ target_link_libraries(
         HLaunch::PlatformWindows
         HLaunch::ProjectOptions
         HLaunch::UI
+        comctl32
         ole32
         shell32
         user32

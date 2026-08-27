@@ -52,6 +52,9 @@ Glaze 仅能出现在 `infrastructure/json` 适配层。持久化 DTO 与领域�
 
 ## 窗口效果
 
+- EXE Manifest 依赖 `Microsoft.Windows.Common-Controls` 6.0，进程启动时调用
+  `InitCommonControlsEx`，最终目标显式链接 `comctl32`。标准 Win32 控件和原生
+  对话框因此使用系统提供的视觉样式；不能用自绘主窗的主题契约推断它们的外观。
 - Platform 层封装 DWM 背景材质、边框颜色、圆角和窗口整体透明度，UI 层只选择效果并渲染透明表面。
 - 使用 Windows SDK 的 `DWMWA_SYSTEMBACKDROP_TYPE`、`DwmExtendFrameIntoClientArea` 和 `DwmEnableBlurBehindWindow`；不使用未公开的 `SetWindowCompositionAttribute`。
 - 请求的材质不可用时按 DWM 系统背景 > 系统模糊 > 半透明主题表面的顺序降级，任何一级失败都不能阻止窗口显示。
@@ -63,4 +66,4 @@ V1 不使用 Qt、WinUI 3、Windows App SDK、WTL、ATL、WRL、Boost、TBB、li
 
 ## 系统库
 
-预计链接 user32、shell32、ole32、advapi32、d2d1、dwrite、windowscodecs、dwmapi、shcore、shlwapi 和 comctl32。只有实际使用时才加入库；`shcore` 当前用于按显示器取得有效 DPI。P1 在线更新和崩溃转储分别需要 winhttp 与 dbghelp。
+当前链接 user32、shell32、ole32、advapi32、d2d1、dwrite、windowscodecs、dwmapi、shcore、shlwapi、uxtheme 和 comctl32；`shcore` 用于按显示器取得有效 DPI，`comctl32` 用于初始化 v6 原生控件。只有实际使用时才加入其他系统库。P1 在线更新和崩溃转储分别需要 winhttp 与 dbghelp。
