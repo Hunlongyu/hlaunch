@@ -10,6 +10,8 @@
 #include "ui/launcher_layout.h"
 #include "ui/text_prompt_dialog.h"
 #include "ui/theme.h"
+#include "ui/system_appearance.h"
+#include "ui/task_dialog.h"
 
 #include <d2d1helper.h>
 #include <windowsx.h>
@@ -39,6 +41,19 @@ constexpr std::size_t maximumIconCacheEntries = 128;
 constexpr UINT_PTR autoHideTimer = 1;
 constexpr UINT dropImportCompletedMessage = WM_APP + 0x43U;
 constexpr UINT iconLoadCompletedMessage = WM_APP + 0x44U;
+
+platform::windows::WindowEffects effectiveWindowEffects(
+    const platform::windows::WindowEffects& configured) noexcept
+{
+    if (!isHighContrastEnabled()) {
+        return configured;
+    }
+    return {
+        .backdrop = platform::windows::WindowBackdrop::Solid,
+        .opacityPercent = 100,
+    };
+}
+
 std::wstring utf8ToWide(const std::string_view value)
 {
     if (value.empty()) {
@@ -199,8 +214,10 @@ bool LauncherWindow::create(
         return false;
     }
 
-    translucentSurface_ = effects.backdrop != platform::windows::WindowBackdrop::Solid;
-    static_cast<void>(platform::windows::applyWindowEffects(window_, effects));
+    const auto effectiveEffects = effectiveWindowEffects(effects);
+    translucentSurface_ = effectiveEffects.backdrop
+        != platform::windows::WindowBackdrop::Solid;
+    static_cast<void>(platform::windows::applyWindowEffects(window_, effectiveEffects));
     applyNativeWindowTheme(window_, themeMode_);
     if (!searchWindow_.create(
             instance,
@@ -271,10 +288,8 @@ void LauncherWindow::setThemeMode(const core::ThemeMode themeMode)
         return;
     }
     themeMode_ = themeMode;
-    applyNativeWindowTheme(window_, themeMode_);
     searchWindow_.setThemeMode(themeMode_);
-    discardDeviceResources();
-    InvalidateRect(window_, nullptr, FALSE);
+    refreshSystemAppearance();
 }
 
 void LauncherWindow::setWindowEffects(
@@ -284,11 +299,24 @@ void LauncherWindow::setWindowEffects(
         return;
     }
     windowEffects_ = effects;
-    translucentSurface_ = effects.backdrop != platform::windows::WindowBackdrop::Solid;
-    static_cast<void>(platform::windows::applyWindowEffects(window_, effects));
     searchWindow_.setWindowEffects(effects);
+    refreshSystemAppearance();
+}
+
+void LauncherWindow::refreshSystemAppearance()
+{
+    if (!window_) {
+        return;
+    }
+    const auto effects = effectiveWindowEffects(windowEffects_);
+    translucentSurface_ = effects.backdrop
+        != platform::windows::WindowBackdrop::Solid;
+    static_cast<void>(platform::windows::applyWindowEffects(window_, effects));
+    applyNativeWindowTheme(window_, themeMode_);
+    static_cast<void>(createTextFormats());
+    searchWindow_.refreshSystemAppearance();
     discardDeviceResources();
-    InvalidateRect(window_, nullptr, FALSE);
+    RedrawWindow(window_, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
 }
 
 void LauncherWindow::setDocumentChangedHandler(DocumentChangedHandler handler)
@@ -815,6 +843,7 @@ LRESULT LauncherWindow::handleMessage(
         if (renderTarget_) {
             renderTarget_->SetDpi(static_cast<float>(dpi_), static_cast<float>(dpi_));
         }
+        refreshSystemAppearance();
         positionSearchWindow();
         InvalidateRect(window_, nullptr, FALSE);
         return 0;
@@ -836,6 +865,10 @@ LRESULT LauncherWindow::handleMessage(
         PostQuitMessage(0);
         return 0;
     default:
+        if (isSystemAppearanceMessage(message)) {
+            refreshSystemAppearance();
+            return 0;
+        }
         return DefWindowProcW(window_, message, wParam, lParam);
     }
 }
@@ -854,9 +887,23 @@ bool LauncherWindow::createDeviceIndependentResources()
         return false;
     }
 
-    constexpr wchar_t fontFamily[] = L"Segoe UI Variable Text";
+    return createTextFormats();
+}
+
+bool LauncherWindow::createTextFormats()
+{
+    if (!writeFactory_) {
+        return false;
+    }
+    titleFormat_ = nullptr;
+    bodyFormat_ = nullptr;
+    smallFormat_ = nullptr;
+    captionFormat_ = nullptr;
+    tabFormat_ = nullptr;
+    iconFormat_ = nullptr;
+    const auto fontFamily = systemUiFontFamily(dpi_);
     if (FAILED(writeFactory_->CreateTextFormat(
-            fontFamily,
+            fontFamily.c_str(),
             nullptr,
             DWRITE_FONT_WEIGHT_SEMI_BOLD,
             DWRITE_FONT_STYLE_NORMAL,
@@ -867,7 +914,7 @@ bool LauncherWindow::createDeviceIndependentResources()
         return false;
     }
     if (FAILED(writeFactory_->CreateTextFormat(
-            fontFamily,
+            fontFamily.c_str(),
             nullptr,
             DWRITE_FONT_WEIGHT_MEDIUM,
             DWRITE_FONT_STYLE_NORMAL,
@@ -878,7 +925,7 @@ bool LauncherWindow::createDeviceIndependentResources()
         return false;
     }
     if (FAILED(writeFactory_->CreateTextFormat(
-            fontFamily,
+            fontFamily.c_str(),
             nullptr,
             DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_FONT_STYLE_NORMAL,
@@ -889,7 +936,7 @@ bool LauncherWindow::createDeviceIndependentResources()
         return false;
     }
     if (FAILED(writeFactory_->CreateTextFormat(
-            fontFamily,
+            fontFamily.c_str(),
             nullptr,
             DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_FONT_STYLE_NORMAL,
@@ -900,7 +947,7 @@ bool LauncherWindow::createDeviceIndependentResources()
         return false;
     }
     if (FAILED(writeFactory_->CreateTextFormat(
-            fontFamily,
+            fontFamily.c_str(),
             nullptr,
             DWRITE_FONT_WEIGHT_MEDIUM,
             DWRITE_FONT_STYLE_NORMAL,
@@ -911,7 +958,7 @@ bool LauncherWindow::createDeviceIndependentResources()
         return false;
     }
     if (FAILED(writeFactory_->CreateTextFormat(
-            fontFamily,
+            fontFamily.c_str(),
             nullptr,
             DWRITE_FONT_WEIGHT_SEMI_BOLD,
             DWRITE_FONT_STYLE_NORMAL,
@@ -1537,7 +1584,9 @@ void LauncherWindow::showAddEditor()
     }
     auto id = platform::windows::createUuidV4();
     if (!id) {
-        MessageBoxW(window_, L"无法生成条目标识。", L"HLaunch 条目", MB_OK | MB_ICONERROR);
+        showTaskMessage(
+            window_, L"HLaunch 条目", L"无法生成条目标识。",
+            TaskDialogIcon::Error);
         return;
     }
     edited->item.id = std::move(*id);
@@ -1547,7 +1596,9 @@ void LauncherWindow::showAddEditor()
         edited->tabIndex,
         std::move(edited->item));
     if (!location || !core::validateItemsDocument(updatedDocument).empty()) {
-        MessageBoxW(window_, L"条目内容未通过校验，请检查输入。", L"HLaunch 条目", MB_OK | MB_ICONWARNING);
+        showTaskMessage(
+            window_, L"HLaunch 条目", L"条目内容未通过校验。",
+            TaskDialogIcon::Warning, L"请检查输入内容后重试。");
         return;
     }
     document_ = std::move(updatedDocument);
@@ -1588,7 +1639,9 @@ void LauncherWindow::showEditEditor(const std::size_t absoluteIndex)
         edited->tabIndex,
         std::move(edited->item));
     if (!location || !core::validateItemsDocument(updatedDocument).empty()) {
-        MessageBoxW(window_, L"条目内容未通过校验，请检查输入。", L"HLaunch 条目", MB_OK | MB_ICONWARNING);
+        showTaskMessage(
+            window_, L"HLaunch 条目", L"条目内容未通过校验。",
+            TaskDialogIcon::Warning, L"请检查输入内容后重试。");
         return;
     }
     document_ = std::move(updatedDocument);
@@ -1732,22 +1785,24 @@ void LauncherWindow::showTabContextMenu(
 void LauncherWindow::addPage()
 {
     const auto entered = showTextPromptDialog(
-        window_, L"添加页面", L"页面名称：", L"新页面");
+        window_, L"添加页面", L"页面名称：", L"新页面", themeMode_);
     if (!entered) {
         return;
     }
     const auto name = wideToUtf8(*entered);
     auto id = platform::windows::createUuidV4();
     if (!name || name->empty() || !id) {
-        MessageBoxW(window_, L"无法创建页面。", L"HLaunch 页面",
-                    MB_OK | MB_ICONERROR);
+        showTaskMessage(
+            window_, L"HLaunch 页面", L"无法创建页面。",
+            TaskDialogIcon::Error);
         return;
     }
     auto updated = document_;
     updated.tabs.push_back(core::Tab{.id = std::move(*id), .name = *name});
     if (!core::validateItemsDocument(updated).empty()) {
-        MessageBoxW(window_, L"页面名称无效或页面数量已达到上限。", L"HLaunch 页面",
-                    MB_OK | MB_ICONWARNING);
+        showTaskMessage(
+            window_, L"HLaunch 页面", L"页面名称无效或页面数量已达到上限。",
+            TaskDialogIcon::Warning);
         return;
     }
     document_ = std::move(updated);
@@ -1774,8 +1829,7 @@ void LauncherWindow::deletePage(const std::size_t tabIndex)
         prompt += utf8ToWide(document_.tabs[target].name);
         prompt += L"”。";
     }
-    if (MessageBoxW(window_, prompt.c_str(), L"HLaunch 删除页面",
-                    MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES) {
+    if (!confirmTask(window_, L"HLaunch 删除页面", prompt)) {
         return;
     }
 
@@ -1791,8 +1845,9 @@ void LauncherWindow::deletePage(const std::size_t tabIndex)
     }
     updated.tabs.erase(updated.tabs.begin() + static_cast<std::ptrdiff_t>(tabIndex));
     if (!core::validateItemsDocument(updated).empty()) {
-        MessageBoxW(window_, L"无法安全删除该页面。", L"HLaunch 页面",
-                    MB_OK | MB_ICONERROR);
+        showTaskMessage(
+            window_, L"HLaunch 页面", L"无法安全删除该页面。",
+            TaskDialogIcon::Error);
         return;
     }
     document_ = std::move(updated);
@@ -1813,7 +1868,7 @@ void LauncherWindow::renamePage(const std::size_t tabIndex)
     }
     const auto entered = showTextPromptDialog(
         window_, L"页面属性", L"页面名称：",
-        utf8ToWide(document_.tabs[tabIndex].name));
+        utf8ToWide(document_.tabs[tabIndex].name), themeMode_);
     if (!entered) {
         return;
     }
@@ -1824,8 +1879,9 @@ void LauncherWindow::renamePage(const std::size_t tabIndex)
     auto updated = document_;
     updated.tabs[tabIndex].name = *name;
     if (!core::validateItemsDocument(updated).empty()) {
-        MessageBoxW(window_, L"页面名称无效。", L"HLaunch 页面",
-                    MB_OK | MB_ICONWARNING);
+        showTaskMessage(
+            window_, L"HLaunch 页面", L"页面名称无效。",
+            TaskDialogIcon::Warning);
         return;
     }
     document_ = std::move(updated);
@@ -1864,11 +1920,7 @@ void LauncherWindow::deleteItem(const std::size_t absoluteIndex)
     prompt.append(L"”吗？\n\n此操作会从 HLaunch 中移除该条目。");
     const bool confirmed = deleteConfirmationHandler_
         ? deleteConfirmationHandler_(window_, item)
-        : MessageBoxW(
-              window_,
-              prompt.c_str(),
-              L"HLaunch 删除条目",
-              MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
+        : confirmTask(window_, L"HLaunch 删除条目", prompt);
     if (!confirmed) {
         if (isSearchFiltering()) {
             searchWindow_.show();
@@ -1882,11 +1934,9 @@ void LauncherWindow::deleteItem(const std::size_t absoluteIndex)
     auto updatedDocument = document_;
     const auto removed = core::removeItem(updatedDocument, *source);
     if (!removed || !core::validateItemsDocument(updatedDocument).empty()) {
-        MessageBoxW(
-            window_,
-            L"无法删除该条目，数据未发生变化。",
-            L"HLaunch 删除条目",
-            MB_OK | MB_ICONERROR);
+        showTaskMessage(
+            window_, L"HLaunch 删除条目", L"无法删除该条目。",
+            TaskDialogIcon::Error, L"数据未发生变化。");
         return;
     }
 
@@ -2076,22 +2126,19 @@ void LauncherWindow::submitDroppedSources(
 void LauncherWindow::applyDropImport(platform::windows::DropImportResult result)
 {
     if (result.failed) {
-        MessageBoxW(
-            window_,
-            L"无法解析拖入内容。请检查文件或网址后重试。",
-            L"HLaunch 拖放",
-            MB_OK | MB_ICONERROR);
+        showTaskMessage(
+            window_, L"HLaunch 拖放", L"无法解析拖入内容。",
+            TaskDialogIcon::Error, L"请检查文件或网址后重试。");
         return;
     }
     if (result.targetTabIndex >= document_.tabs.size()) {
         return;
     }
     if (result.items.empty()) {
-        MessageBoxW(
-            window_,
-            L"拖入内容中没有可添加的文件、文件夹、快捷方式或网址。",
-            L"HLaunch 拖放",
-            MB_OK | MB_ICONINFORMATION);
+        showTaskMessage(
+            window_, L"HLaunch 拖放", L"拖入内容中没有可添加的项目。",
+            TaskDialogIcon::Information,
+            L"支持文件、文件夹、快捷方式和网址。");
         return;
     }
 
@@ -2106,20 +2153,19 @@ void LauncherWindow::applyDropImport(platform::windows::DropImportResult result)
         }
     }
     const bool allowDuplicates = duplicateCount > 0
-        && MessageBoxW(
-               window_,
-               (L"发现 " + std::to_wstring(duplicateCount)
-                   + L" 个启动属性完全相同的条目。\n\n是否仍然添加？"
-                     L"选择“否”将跳过这些条目。")
-                   .c_str(),
-               L"HLaunch 重复条目",
-               MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2)
-            == IDYES;
+        && confirmTask(
+            window_, L"HLaunch 重复条目",
+            L"发现 " + std::to_wstring(duplicateCount)
+                + L" 个启动属性完全相同的条目。是否仍然添加？",
+            L"选择“否”将跳过这些条目。",
+            TaskDialogIcon::Warning);
 
     for (auto& item : result.items) {
         auto id = platform::windows::createUuidV4();
         if (!id) {
-            MessageBoxW(window_, L"无法生成条目标识。", L"HLaunch 拖放", MB_OK | MB_ICONERROR);
+            showTaskMessage(
+                window_, L"HLaunch 拖放", L"无法生成条目标识。",
+                TaskDialogIcon::Error);
             return;
         }
         item.id = std::move(*id);
@@ -2132,11 +2178,10 @@ void LauncherWindow::applyDropImport(platform::windows::DropImportResult result)
         std::move(result.items),
         allowDuplicates);
     if (!mutation || !core::validateItemsDocument(updatedDocument).empty()) {
-        MessageBoxW(
-            window_,
-            L"拖入条目超过数据限制或未通过校验，本次没有添加。",
-            L"HLaunch 拖放",
-            MB_OK | MB_ICONWARNING);
+        showTaskMessage(
+            window_, L"HLaunch 拖放", L"本次没有添加条目。",
+            TaskDialogIcon::Warning,
+            L"拖入条目超过数据限制或未通过校验。");
         return;
     }
 
@@ -2164,7 +2209,9 @@ void LauncherWindow::applyDropImport(platform::windows::DropImportResult result)
         if (result.unsupportedCount > 0) {
             summary += L"\n无法识别：" + std::to_wstring(result.unsupportedCount) + L" 个。";
         }
-        MessageBoxW(window_, summary.c_str(), L"HLaunch 拖放", MB_OK | MB_ICONINFORMATION);
+        showTaskMessage(
+            window_, L"HLaunch 拖放", L"拖放导入完成。",
+            TaskDialogIcon::Information, summary);
     }
 }
 

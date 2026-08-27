@@ -119,6 +119,8 @@ add_library(
     hlaunch_platform_windows
     STATIC
         platform/windows/activation_command.h
+        platform/windows/app_identity.cpp
+        platform/windows/app_identity.h
         platform/windows/drop_item_resolver.cpp
         platform/windows/drop_item_resolver.h
         platform/windows/drop_target.cpp
@@ -190,6 +192,10 @@ add_library(
         ui/search_window.h
         ui/settings_window.cpp
         ui/settings_window.h
+        ui/system_appearance.cpp
+        ui/system_appearance.h
+        ui/task_dialog.cpp
+        ui/task_dialog.h
         ui/native_dialog_template.h
         ui/text_prompt_dialog.cpp
         ui/text_prompt_dialog.h

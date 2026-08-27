@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/data_model.h"
+#include "ui/system_appearance.h"
 
 #include <Windows.h>
 
@@ -35,6 +36,7 @@ public:
     void hide();
     void setAppearance(const core::AppearanceConfig& appearance);
     void setActivation(const core::ActivationConfig& activation);
+    void refreshSystemAppearance();
 
     [[nodiscard]] HWND handle() const noexcept;
     [[nodiscard]] bool isVisible() const noexcept;
@@ -85,6 +87,7 @@ private:
     HWND startupEnabledCheck_{};
     HWND startupApplyButton_{};
     HWND startupStatusText_{};
+    SystemUiFont systemUiFont_{};
     core::AppearanceConfig appearance_{};
     core::ActivationConfig activation_{};
     bool startupEnabled_{};

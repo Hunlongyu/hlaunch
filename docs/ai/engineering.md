@@ -55,6 +55,9 @@ Glaze 仅能出现在 `infrastructure/json` 适配层。持久化 DTO 与领域�
 - EXE Manifest 依赖 `Microsoft.Windows.Common-Controls` 6.0，进程启动时调用
   `InitCommonControlsEx`，最终目标显式链接 `comctl32`。标准 Win32 控件和原生
   对话框因此使用系统提供的视觉样式；不能用自绘主窗的主题契约推断它们的外观。
+- 用户提示、错误和破坏性确认优先通过运行时解析的 `TaskDialogIndirect` 显示；
+  缺少 Common Controls v6 导出或调用失败时回退到 `MessageBoxW`，不能让导入
+  表问题阻止进程启动。确认对话框默认按钮必须保持为“否”。
 - Platform 层封装 DWM 背景材质、边框颜色、圆角和窗口整体透明度，UI 层只选择效果并渲染透明表面。
 - 使用 Windows SDK 的 `DWMWA_SYSTEMBACKDROP_TYPE`、`DwmExtendFrameIntoClientArea` 和 `DwmEnableBlurBehindWindow`；不使用未公开的 `SetWindowCompositionAttribute`。
 - 请求的材质不可用时按 DWM 系统背景 > 系统模糊 > 半透明主题表面的顺序降级，任何一级失败都不能阻止窗口显示。

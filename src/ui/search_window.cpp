@@ -1,6 +1,7 @@
 #include "ui/search_window.h"
 
 #include "ui/theme.h"
+#include "ui/system_appearance.h"
 
 #include <d2d1helper.h>
 #include <windowsx.h>
@@ -16,6 +17,18 @@ namespace {
 constexpr wchar_t searchWindowClass[] = L"HLaunch.SearchWindow.v1";
 constexpr float cornerRadius = 12.0F;
 constexpr std::size_t maximumQueryLength = 256;
+
+platform::windows::WindowEffects effectiveWindowEffects(
+    const platform::windows::WindowEffects& configured) noexcept
+{
+    if (!isHighContrastEnabled()) {
+        return configured;
+    }
+    return {
+        .backdrop = platform::windows::WindowBackdrop::Solid,
+        .opacityPercent = 100,
+    };
+}
 
 int dipToPixels(const float dip, const UINT dpi) noexcept
 {
@@ -81,7 +94,10 @@ bool SearchWindow::create(
         return false;
     }
 
-    static_cast<void>(platform::windows::applyWindowEffects(window_, effects));
+    const auto effectiveEffects = effectiveWindowEffects(effects);
+    translucentSurface_ = effectiveEffects.backdrop
+        != platform::windows::WindowBackdrop::Solid;
+    static_cast<void>(platform::windows::applyWindowEffects(window_, effectiveEffects));
     applyNativeWindowTheme(window_, themeMode_);
     return true;
 }
@@ -92,9 +108,7 @@ void SearchWindow::setThemeMode(const core::ThemeMode themeMode)
         return;
     }
     themeMode_ = themeMode;
-    applyNativeWindowTheme(window_, themeMode_);
-    discardDeviceResources();
-    InvalidateRect(window_, nullptr, FALSE);
+    refreshSystemAppearance();
 }
 
 void SearchWindow::setWindowEffects(
@@ -104,10 +118,22 @@ void SearchWindow::setWindowEffects(
         return;
     }
     windowEffects_ = effects;
-    translucentSurface_ = effects.backdrop != platform::windows::WindowBackdrop::Solid;
+    refreshSystemAppearance();
+}
+
+void SearchWindow::refreshSystemAppearance()
+{
+    if (!window_) {
+        return;
+    }
+    const auto effects = effectiveWindowEffects(windowEffects_);
+    translucentSurface_ = effects.backdrop
+        != platform::windows::WindowBackdrop::Solid;
     static_cast<void>(platform::windows::applyWindowEffects(window_, effects));
+    applyNativeWindowTheme(window_, themeMode_);
+    static_cast<void>(createTextFormat());
     discardDeviceResources();
-    InvalidateRect(window_, nullptr, FALSE);
+    RedrawWindow(window_, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
 }
 
 void SearchWindow::show()
@@ -294,6 +320,7 @@ LRESULT SearchWindow::handleMessage(
         if (renderTarget_) {
             renderTarget_->SetDpi(static_cast<float>(dpi_), static_cast<float>(dpi_));
         }
+        refreshSystemAppearance();
         return 0;
     }
     case WM_CLOSE:
@@ -303,6 +330,10 @@ LRESULT SearchWindow::handleMessage(
         window_ = nullptr;
         return 0;
     default:
+        if (isSystemAppearanceMessage(message)) {
+            refreshSystemAppearance();
+            return 0;
+        }
         return DefWindowProcW(window_, message, wParam, lParam);
     }
 }
@@ -321,8 +352,18 @@ bool SearchWindow::createDeviceIndependentResources()
         return false;
     }
 
+    return createTextFormat();
+}
+
+bool SearchWindow::createTextFormat()
+{
+    if (!writeFactory_) {
+        return false;
+    }
+    bodyFormat_ = nullptr;
+    const auto fontFamily = systemUiFontFamily(dpi_);
     if (FAILED(writeFactory_->CreateTextFormat(
-            L"Segoe UI Variable Text",
+            fontFamily.c_str(),
             nullptr,
             DWRITE_FONT_WEIGHT_MEDIUM,
             DWRITE_FONT_STYLE_NORMAL,

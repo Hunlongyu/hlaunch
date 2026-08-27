@@ -4,8 +4,11 @@
 #include "infrastructure/filesystem/data_paths.h"
 #include "infrastructure/filesystem/data_store.h"
 #include "infrastructure/logging/diagnostic_log.h"
+#include "platform/windows/app_identity.h"
 #include "platform/windows/shell_launcher.h"
 #include "platform/windows/startup_registration.h"
+#include "ui/system_appearance.h"
+#include "ui/task_dialog.h"
 
 #include <Ole2.h>
 #include <wil/resource.h>
@@ -37,7 +40,7 @@ std::filesystem::path executablePath()
 
 void showStartupError(const wchar_t* message)
 {
-    MessageBoxW(nullptr, message, L"HLaunch", MB_OK | MB_ICONERROR);
+    ui::showTaskMessage(nullptr, L"HLaunch", message, ui::TaskDialogIcon::Error);
 }
 
 void showHotkeyError(const HWND owner, const platform::windows::HotkeyError& error)
@@ -53,7 +56,9 @@ void showHotkeyError(const HWND owner, const platform::windows::HotkeyError& err
                   L"\n\n系统错误码：";
         message += std::to_wstring(error.systemCode);
     }
-    MessageBoxW(owner, message.c_str(), L"HLaunch 快捷键", MB_OK | MB_ICONWARNING);
+    ui::showTaskMessage(
+        owner, L"HLaunch 快捷键", L"全局快捷键不可用。",
+        ui::TaskDialogIcon::Warning, message);
 }
 
 std::string_view loadSourceName(const infrastructure::filesystem::LoadSource source) noexcept
@@ -173,6 +178,19 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
     }
     else {
         OutputDebugStringW(L"HLaunch could not initialize diagnostic logging.\n");
+    }
+
+    const auto identityResult = platform::windows::setProcessAppUserModelId();
+    if (identityResult) {
+        infrastructure::logging::write(
+            infrastructure::logging::Level::Info,
+            "app_user_model_id_set value=Hunlongyu.HLaunch");
+    }
+    else {
+        infrastructure::logging::writeSystemError(
+            infrastructure::logging::Level::Warning,
+            "app_user_model_id_set_failed",
+            static_cast<unsigned long>(identityResult.error()));
     }
 
     const auto config = infrastructure::filesystem::loadConfig(paths->configFile);
@@ -334,18 +352,20 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
         showHotkeyError(launcher_.handle(), hotkeyResult.error());
     }
     if (!screenEdgeStarted) {
-        MessageBoxW(
+        ui::showTaskMessage(
             launcher_.handle(),
-            L"无法启动屏幕边缘唤起。该功能已保持关闭，请检查显示器状态后重新启动 HLaunch。",
             L"HLaunch 屏幕边缘",
-            MB_OK | MB_ICONWARNING);
+            L"无法启动屏幕边缘唤起。",
+            ui::TaskDialogIcon::Warning,
+            L"该功能已保持关闭，请检查显示器状态后重新启动 HLaunch。");
     }
     if (!trayStarted) {
-        MessageBoxW(
+        ui::showTaskMessage(
             launcher_.handle(),
-            L"无法创建托盘图标。快捷键仍可使用；请重新启动 Explorer 或 HLaunch 后重试。",
             L"HLaunch 托盘",
-            MB_OK | MB_ICONWARNING);
+            L"无法创建托盘图标。",
+            ui::TaskDialogIcon::Warning,
+            L"快捷键仍可使用；请重新启动 Explorer 或 HLaunch 后重试。");
     }
 
     MSG message{};
@@ -432,12 +452,12 @@ LRESULT Application::handleActivationMessage(
         return 0;
     }
     if (message == itemsSaveFailedMessage) {
-        MessageBoxW(
+        ui::showTaskMessage(
             launcher_.handle(),
-            L"条目已在当前会话中更新，但无法保存到 items.json。\n\n"
-            L"请检查数据目录权限或磁盘空间后重试。",
             L"HLaunch 保存失败",
-            MB_OK | MB_ICONERROR);
+            L"条目无法保存到 items.json。",
+            ui::TaskDialogIcon::Error,
+            L"条目已在当前会话中更新。请检查数据目录权限或磁盘空间后重试。");
         return 0;
     }
     if (message == WM_HOTKEY && hotkey_.handlesMessage(wParam)) {
@@ -453,6 +473,10 @@ LRESULT Application::handleActivationMessage(
     if ((message == WM_DISPLAYCHANGE || message == WM_SETTINGCHANGE)
         && screenEdge_.isRunning()) {
         screenEdge_.refreshMonitors();
+    }
+    if (ui::isSystemAppearanceMessage(message)) {
+        launcher_.refreshSystemAppearance();
+        settings_.refreshSystemAppearance();
     }
     if (const auto trayCommand = trayIcon_.handleMessage(
             message,
@@ -527,11 +551,12 @@ void Application::launch(const core::LaunchItem& item)
         message += L"\n\n系统错误码：";
         message += std::to_wstring(result.error().systemCode);
     }
-    MessageBoxW(
+    ui::showTaskMessage(
         launcher_.handle(),
-        message.c_str(),
         L"HLaunch 启动失败",
-        MB_OK | MB_ICONERROR);
+        L"Windows 无法启动该条目。",
+        ui::TaskDialogIcon::Error,
+        message);
 }
 
 void Application::showSettings()
@@ -565,11 +590,11 @@ void Application::showSettings()
             [this](const bool enabled) {
                 return changeStartup(enabled);
             })) {
-        MessageBoxW(
+        ui::showTaskMessage(
             launcher_.handle(),
-            L"无法创建设置窗口。",
             L"HLaunch 设置",
-            MB_OK | MB_ICONERROR);
+            L"无法创建设置窗口。",
+            ui::TaskDialogIcon::Error);
     }
 }
 
@@ -672,11 +697,12 @@ bool Application::changeAppearance(const core::AppearanceConfig& appearance)
             infrastructure::logging::Level::Error,
             "config_appearance_save_failed",
             saved.error().systemCode);
-        MessageBoxW(
+        ui::showTaskMessage(
             settings_.handle(),
-            L"无法保存外观设置，请检查数据目录权限或磁盘空间。",
             L"HLaunch 设置",
-            MB_OK | MB_ICONERROR);
+            L"无法保存外观设置。",
+            ui::TaskDialogIcon::Error,
+            L"请检查数据目录权限或磁盘空间。");
         return false;
     }
     config_ = std::move(updated);

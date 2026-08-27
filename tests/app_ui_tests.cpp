@@ -2,12 +2,14 @@
 
 #include "app/command_line.h"
 #include "platform/windows/activation_command.h"
+#include "platform/windows/app_identity.h"
 #include "platform/windows/window_effects.h"
 #include "ui/item_context_menu.h"
 #include "ui/launcher_context_menu.h"
 #include "ui/launcher_layout.h"
 #include "ui/launcher_window.h"
 #include "ui/settings_window.h"
+#include "ui/system_appearance.h"
 #include "ui/theme.h"
 
 #include <Ole2.h>
@@ -146,8 +148,8 @@ TEST_CASE("PROD-GRID-001 launcher chrome empty slots and tabs expose separate me
 
 TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
 {
-    const auto& dark = hlaunch::ui::paletteFor(hlaunch::core::ThemeMode::Dark);
-    const auto& light = hlaunch::ui::paletteFor(hlaunch::core::ThemeMode::Light);
+    const auto dark = hlaunch::ui::paletteFor(hlaunch::core::ThemeMode::Dark, false);
+    const auto light = hlaunch::ui::paletteFor(hlaunch::core::ThemeMode::Light, false);
     CHECK(dark.background != light.background);
     CHECK(dark.text != light.text);
     CHECK(dark.accent != light.accent);
@@ -180,6 +182,10 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
     const auto initialWindow = settings.handle();
     const auto themeCombo = GetDlgItem(settings.handle(), 2001);
     REQUIRE(themeCombo != nullptr);
+    const auto systemFont = reinterpret_cast<HFONT>(
+        SendMessageW(themeCombo, WM_GETFONT, 0, 0));
+    CHECK(systemFont != nullptr);
+    CHECK(systemFont != static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT)));
     SendMessageW(themeCombo, CB_SETCURSEL, 1, 0);
     SendMessageW(
         settings.handle(),
@@ -325,6 +331,36 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
         }));
     CHECK(settings.handle() == initialWindow);
     settings.hide();
+}
+
+TEST_CASE("UI-THEME-001 system appearance uses Windows settings and refresh messages")
+{
+    CHECK_FALSE(hlaunch::ui::systemUiFontFamily(96).empty());
+    hlaunch::ui::SystemUiFont font{};
+    REQUIRE(font.refresh(96));
+    CHECK(font.get() != nullptr);
+    CHECK(hlaunch::ui::isSystemAppearanceMessage(WM_THEMECHANGED));
+    CHECK(hlaunch::ui::isSystemAppearanceMessage(WM_SETTINGCHANGE));
+    CHECK(hlaunch::ui::isSystemAppearanceMessage(WM_SYSCOLORCHANGE));
+    CHECK_FALSE(hlaunch::ui::isSystemAppearanceMessage(WM_COMMAND));
+
+    const auto darkHighContrast = hlaunch::ui::paletteFor(
+        hlaunch::core::ThemeMode::Dark, true);
+    const auto lightHighContrast = hlaunch::ui::paletteFor(
+        hlaunch::core::ThemeMode::Light, true);
+    CHECK(darkHighContrast.background == lightHighContrast.background);
+    CHECK(darkHighContrast.text == lightHighContrast.text);
+}
+
+TEST_CASE("PLAT-SHELL-001 process exposes stable AppUserModelID")
+{
+    REQUIRE(hlaunch::platform::windows::setProcessAppUserModelId());
+    PWSTR current{};
+    REQUIRE(SUCCEEDED(GetCurrentProcessExplicitAppUserModelID(&current)));
+    REQUIRE(current != nullptr);
+    CHECK(std::wstring_view{current}
+          == hlaunch::platform::windows::appUserModelId);
+    CoTaskMemFree(current);
 }
 
 TEST_CASE("PLAT-SINGLE-001 command line maps activation commands without payload pointers")

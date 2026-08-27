@@ -55,6 +55,7 @@ public:
         core::ThemeMode themeMode = core::ThemeMode::Dark);
     void setThemeMode(core::ThemeMode themeMode);
     void setWindowEffects(const platform::windows::WindowEffects& effects);
+    void refreshSystemAppearance();
     void setDocumentChangedHandler(DocumentChangedHandler handler);
     void setDeleteConfirmationHandler(DeleteConfirmationHandler handler);
     void setItemEditorHandler(ItemEditorHandler handler);
@@ -73,6 +74,7 @@ private:
     LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
 
     [[nodiscard]] bool createDeviceIndependentResources();
+    [[nodiscard]] bool createTextFormats();
     [[nodiscard]] bool createDeviceResources();
     void discardDeviceResources() noexcept;
     void positionOnCursorMonitor();

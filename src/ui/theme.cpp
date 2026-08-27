@@ -1,5 +1,7 @@
 #include "ui/theme.h"
 
+#include "ui/system_appearance.h"
+
 #include <dwmapi.h>
 #include <uxtheme.h>
 
@@ -28,11 +30,38 @@ constexpr ThemePalette lightPalette{
     .danger = 0xDC2626,
 };
 
+std::uint32_t systemColor(const int index) noexcept
+{
+    const COLORREF color = GetSysColor(index);
+    return (static_cast<std::uint32_t>(GetRValue(color)) << 16U)
+        | (static_cast<std::uint32_t>(GetGValue(color)) << 8U)
+        | static_cast<std::uint32_t>(GetBValue(color));
+}
+
 } // namespace
 
-const ThemePalette& paletteFor(const core::ThemeMode mode) noexcept
+ThemePalette paletteFor(const core::ThemeMode mode) noexcept
 {
-    return mode == core::ThemeMode::Light ? lightPalette : darkPalette;
+    return paletteFor(mode, isHighContrastEnabled());
+}
+
+ThemePalette paletteFor(
+    const core::ThemeMode mode,
+    const bool highContrast) noexcept
+{
+    if (!highContrast) {
+        return mode == core::ThemeMode::Light ? lightPalette : darkPalette;
+    }
+    return {
+        .background = systemColor(COLOR_WINDOW),
+        .surface = systemColor(COLOR_WINDOW),
+        .elevated = systemColor(COLOR_BTNFACE),
+        .text = systemColor(COLOR_WINDOWTEXT),
+        .textMuted = systemColor(COLOR_GRAYTEXT),
+        .accent = systemColor(COLOR_HIGHLIGHT),
+        .border = systemColor(COLOR_WINDOWFRAME),
+        .danger = systemColor(COLOR_HIGHLIGHT),
+    };
 }
 
 COLORREF toColorRef(const std::uint32_t rgb) noexcept
@@ -66,7 +95,9 @@ void applyNativeControlTheme(const HWND control, const core::ThemeMode mode) noe
     }
     static_cast<void>(SetWindowTheme(
         control,
-        mode == core::ThemeMode::Dark ? L"DarkMode_Explorer" : L"Explorer",
+        mode == core::ThemeMode::Dark && !isHighContrastEnabled()
+            ? L"DarkMode_Explorer"
+            : L"Explorer",
         nullptr));
 }
 

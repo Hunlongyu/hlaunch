@@ -35,6 +35,7 @@ public:
         KeyHandler keyHandler);
     void setThemeMode(core::ThemeMode themeMode);
     void setWindowEffects(const platform::windows::WindowEffects& effects);
+    void refreshSystemAppearance();
     void show();
     void positionAttached(HWND owner, UINT dpi, const SearchPopupLayout& layout);
     void hide();
@@ -53,6 +54,7 @@ private:
     LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
 
     [[nodiscard]] bool createDeviceIndependentResources();
+    [[nodiscard]] bool createTextFormat();
     [[nodiscard]] bool createDeviceResources();
     void discardDeviceResources() noexcept;
     void notifyQueryChanged();

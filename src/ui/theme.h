@@ -19,7 +19,10 @@ struct ThemePalette {
     std::uint32_t danger{};
 };
 
-[[nodiscard]] const ThemePalette& paletteFor(core::ThemeMode mode) noexcept;
+[[nodiscard]] ThemePalette paletteFor(core::ThemeMode mode) noexcept;
+[[nodiscard]] ThemePalette paletteFor(
+    core::ThemeMode mode,
+    bool highContrast) noexcept;
 [[nodiscard]] COLORREF toColorRef(std::uint32_t rgb) noexcept;
 void applyNativeWindowTheme(HWND window, core::ThemeMode mode) noexcept;
 void applyNativeControlTheme(HWND control, core::ThemeMode mode) noexcept;

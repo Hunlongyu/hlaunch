@@ -1,6 +1,8 @@
 #include "ui/item_editor_dialog.h"
 
 #include "ui/native_dialog_template.h"
+#include "ui/system_appearance.h"
+#include "ui/task_dialog.h"
 
 #include <Windows.h>
 #include <ShObjIdl.h>
@@ -159,8 +161,10 @@ public:
     EditorState(
         const std::vector<core::Tab>& tabs,
         const std::size_t initialTab,
-        const core::LaunchItem* item)
-        : tabs_(tabs), initialTab_(initialTab), initialItem_(item), quickMode_(item == nullptr)
+        const core::LaunchItem* item,
+        const core::ThemeMode themeMode)
+        : tabs_(tabs), initialTab_(initialTab), initialItem_(item), quickMode_(item == nullptr),
+          themeMode_(themeMode)
     {}
 
     static INT_PTR CALLBACK procedure(
@@ -172,7 +176,7 @@ public:
             self->dialog_ = dialog;
             SetWindowLongPtrW(dialog, DWLP_USER, reinterpret_cast<LONG_PTR>(self));
         }
-        return self ? self->handle(message, wParam) : FALSE;
+        return self ? self->handle(message, wParam, lParam) : FALSE;
     }
 
     [[nodiscard]] std::optional<ItemEditorResult> takeResult()
@@ -181,7 +185,7 @@ public:
     }
 
 private:
-    INT_PTR handle(const UINT message, const WPARAM wParam)
+    INT_PTR handle(const UINT message, const WPARAM wParam, const LPARAM lParam)
     {
         if (message == WM_INITDIALOG) {
             initialize();
@@ -209,6 +213,21 @@ private:
             EndDialog(dialog_, IDCANCEL);
             return TRUE;
         }
+        if (message == WM_DPICHANGED) {
+            const auto* suggested = reinterpret_cast<const RECT*>(lParam); // NOLINT(performance-no-int-to-ptr): WM_DPICHANGED defines LPARAM as RECT*.
+            SetWindowPos(
+                dialog_, nullptr,
+                suggested->left, suggested->top,
+                suggested->right - suggested->left,
+                suggested->bottom - suggested->top,
+                SWP_NOACTIVATE | SWP_NOZORDER);
+            refreshSystemAppearance();
+            return TRUE;
+        }
+        if (isSystemAppearanceMessage(message)) {
+            refreshSystemAppearance();
+            return TRUE;
+        }
         return FALSE;
     }
 
@@ -227,6 +246,8 @@ private:
         SetWindowPos(dialog_, nullptr, x, y, width, height,
                      SWP_NOACTIVATE | SWP_NOZORDER);
 
+        static_cast<void>(systemUiFont_.refresh(GetDpiForWindow(dialog_)));
+
         if (quickMode_) {
             createQuickControls();
         }
@@ -234,7 +255,27 @@ private:
             createPropertyControls();
             populate();
         }
+        refreshSystemAppearance();
         SetFocus(quickMode_ ? target_ : name_);
+    }
+
+    void refreshSystemAppearance()
+    {
+        static_cast<void>(systemUiFont_.refresh(GetDpiForWindow(dialog_)));
+        applySystemUiFont(dialog_, systemUiFont_.get());
+        applyNativeWindowTheme(dialog_, themeMode_);
+        EnumChildWindows(
+            dialog_,
+            [](const HWND child, const LPARAM parameter) -> BOOL {
+                applyNativeControlTheme(
+                    child,
+                    static_cast<core::ThemeMode>(parameter));
+                return TRUE;
+            },
+            static_cast<LPARAM>(themeMode_));
+        RedrawWindow(
+            dialog_, nullptr, nullptr,
+            RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
     }
 
     HWND add(
@@ -254,7 +295,7 @@ private:
             GetModuleHandleW(nullptr), nullptr);
         SendMessageW(
             control, WM_SETFONT,
-            reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+            reinterpret_cast<WPARAM>(systemUiFont_.get()), TRUE);
         return control;
     }
 
@@ -385,13 +426,15 @@ private:
         const auto name = wideToUtf8(nameValue);
         const auto target = wideToUtf8(targetValue);
         if (!name || name->empty() || !target || target->empty()) {
-            MessageBoxW(dialog_, L"名称和目标不能为空。", L"HLaunch 项目",
-                        MB_OK | MB_ICONWARNING);
+            showTaskMessage(
+                dialog_, L"HLaunch 项目", L"名称和目标不能为空。",
+                TaskDialogIcon::Warning);
             return;
         }
         if (name->size() > maximumItemNameBytes || target->size() > maximumFieldBytes) {
-            MessageBoxW(dialog_, L"名称或目标过长。", L"HLaunch 项目",
-                        MB_OK | MB_ICONWARNING);
+            showTaskMessage(
+                dialog_, L"HLaunch 项目", L"名称或目标过长。",
+                TaskDialogIcon::Warning);
             return;
         }
 
@@ -412,8 +455,9 @@ private:
             if (!working || !icon
                 || working->size() > maximumFieldBytes
                 || icon->size() > maximumFieldBytes) {
-                MessageBoxW(dialog_, L"工作目录或图标路径无效。", L"HLaunch 项目",
-                            MB_OK | MB_ICONWARNING);
+                showTaskMessage(
+                    dialog_, L"HLaunch 项目", L"工作目录或图标路径无效。",
+                    TaskDialogIcon::Warning);
                 return;
             }
             if (!working->empty()) {
@@ -433,8 +477,9 @@ private:
                     const auto value = wideToUtf8(line);
                     if (!value || value->size() > maximumFieldBytes
                         || item.arguments.size() >= maximumArgumentCount) {
-                        MessageBoxW(dialog_, L"参数内容无效或数量过多。", L"HLaunch 项目",
-                                    MB_OK | MB_ICONWARNING);
+                        showTaskMessage(
+                            dialog_, L"HLaunch 项目", L"参数内容无效或数量过多。",
+                            TaskDialogIcon::Warning);
                         return;
                     }
                     item.arguments.push_back(*value);
@@ -471,6 +516,8 @@ private:
     std::size_t initialTab_{};
     const core::LaunchItem* initialItem_{};
     bool quickMode_{};
+    core::ThemeMode themeMode_{core::ThemeMode::Dark};
+    SystemUiFont systemUiFont_{};
     std::optional<ItemEditorResult> result_{};
 };
 
@@ -483,13 +530,13 @@ std::optional<ItemEditorResult> ItemEditorDialog::show(
     const core::LaunchItem* initialItem,
     const core::ThemeMode themeMode)
 {
-    (void)themeMode;
     if (tabs.empty()) {
-        MessageBoxW(owner, L"请先创建页面。", L"HLaunch 项目",
-                    MB_OK | MB_ICONINFORMATION);
+        showTaskMessage(
+            owner, L"HLaunch 项目", L"请先创建页面。",
+            TaskDialogIcon::Information);
         return std::nullopt;
     }
-    EditorState state{tabs, initialTabIndex, initialItem};
+    EditorState state{tabs, initialTabIndex, initialItem, themeMode};
     const NativeDialogTemplate dialogTemplate{};
     const auto result = DialogBoxIndirectParamW(
         GetModuleHandleW(nullptr), dialogTemplate.get(), owner,

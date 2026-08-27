@@ -1,6 +1,7 @@
 #include "ui/settings_window.h"
 
 #include "ui/native_dialog_template.h"
+#include "ui/theme.h"
 
 #include <algorithm>
 #include <cmath>
@@ -154,12 +155,35 @@ void SettingsWindow::setAppearance(const core::AppearanceConfig& appearance)
 {
     appearance_ = appearance;
     syncControls();
+    refreshSystemAppearance();
 }
 
 void SettingsWindow::setActivation(const core::ActivationConfig& activation)
 {
     activation_ = activation;
     syncActivationControls();
+}
+
+void SettingsWindow::refreshSystemAppearance()
+{
+    if (!window_) {
+        return;
+    }
+    static_cast<void>(systemUiFont_.refresh(GetDpiForWindow(window_)));
+    applySystemUiFont(window_, systemUiFont_.get());
+    applyNativeWindowTheme(window_, appearance_.theme);
+    EnumChildWindows(
+        window_,
+        [](const HWND child, const LPARAM parameter) -> BOOL {
+            applyNativeControlTheme(
+                child,
+                static_cast<core::ThemeMode>(parameter));
+            return TRUE;
+        },
+        static_cast<LPARAM>(appearance_.theme));
+    RedrawWindow(
+        window_, nullptr, nullptr,
+        RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
 }
 
 HWND SettingsWindow::handle() const noexcept
@@ -190,7 +214,7 @@ INT_PTR CALLBACK SettingsWindow::dialogProcedure(
 INT_PTR SettingsWindow::handleMessage(
     const UINT message,
     const WPARAM wParam,
-    const LPARAM)
+    const LPARAM lParam)
 {
     switch (message) {
     case WM_INITDIALOG:
@@ -198,7 +222,19 @@ INT_PTR SettingsWindow::handleMessage(
         SetWindowPos(window_, nullptr, 0, 0, settingsWidth, settingsHeight,
                      SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOZORDER);
         createControls();
+        refreshSystemAppearance();
         return TRUE;
+    case WM_DPICHANGED: {
+        const auto* suggested = reinterpret_cast<const RECT*>(lParam); // NOLINT(performance-no-int-to-ptr): WM_DPICHANGED defines LPARAM as RECT*.
+        SetWindowPos(
+            window_, nullptr,
+            suggested->left, suggested->top,
+            suggested->right - suggested->left,
+            suggested->bottom - suggested->top,
+            SWP_NOACTIVATE | SWP_NOZORDER);
+        refreshSystemAppearance();
+        return TRUE;
+    }
     case WM_COMMAND:
         if (LOWORD(wParam) == idTheme && HIWORD(wParam) == CBN_SELCHANGE) {
             static_cast<void>(applyAppearanceFromControls(false));
@@ -268,6 +304,10 @@ INT_PTR SettingsWindow::handleMessage(
         startupStatusText_ = nullptr;
         return TRUE;
     default:
+        if (isSystemAppearanceMessage(message)) {
+            refreshSystemAppearance();
+            return TRUE;
+        }
         return FALSE;
     }
 }
@@ -283,7 +323,8 @@ bool SettingsWindow::create(const HINSTANCE instance, const HWND owner)
 
 void SettingsWindow::createControls()
 {
-    const auto font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+    static_cast<void>(systemUiFont_.refresh(GetDpiForWindow(window_)));
+    const auto font = systemUiFont_.get();
     auto add = [&](const wchar_t* cls, const wchar_t* text, const DWORD style,
                    const int x, const int y, const int width, const int height,
                    const int id) {

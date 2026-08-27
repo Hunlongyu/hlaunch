@@ -1,6 +1,10 @@
 # Windows 集成
 
-当前实现状态（2026-08-27）：已实现按当前用户 SID 隔离的 Named Mutex、固定类名隐藏激活窗口、`--show`、`--hide`、`--toggle` 的注册消息转发、全局快捷键注册、`Shell_NotifyIconW` 托盘图标、条目的 `ShellExecuteExW` 启动适配、Launcher 的 OLE `IDropTarget` 注册与撤销，以及当前用户开机启动设置。快捷键可用时主实例无参数启动默认隐藏；快捷键禁用或注册失败且没有显式启动命令时暂时显示主窗。Launcher 关闭按钮只执行隐藏；未锁定且前台切换到其他进程后延迟收起，同进程的搜索、菜单和原生对话框不会触发误收起。运行期窗口锁定可由标题区或 `Ctrl+Space` 切换。托盘支持显示/隐藏、打开可复用的原生设置窗和退出，收到 `TaskbarCreated` 后重新添加。同一完整性级别下实测第二实例退出且主实例保持唯一。Shell 适配保持目标、逻辑参数和工作目录分离，支持 `open`/`runas` 并区分 UAC 取消。拖放接收 `CF_HDROP`、浏览器 URL 剪贴板格式和 Unicode URL 文本，文件属性与 URL 分类在后台完成，结果通过窗口消息回到 UI 线程。Shell 图标服务优先读取显式 `.ico`/EXE 图标，否则从目标取得系统图标，在后台转换成预乘 BGRA 像素并回送 UI。`.lnk` 启动解析、有限重试和不同完整性级别 UIPI 仍未实现。
+当前实现状态（2026-08-27）：已实现稳定的进程 AppUserModelID `Hunlongyu.HLaunch`、按当前用户 SID 隔离的 Named Mutex、固定类名隐藏激活窗口、`--show`、`--hide`、`--toggle` 的注册消息转发、全局快捷键注册、`Shell_NotifyIconW` 托盘图标、条目的 `ShellExecuteExW` 启动适配、Launcher 的 OLE `IDropTarget` 注册与撤销，以及当前用户开机启动设置。快捷键可用时主实例无参数启动默认隐藏；快捷键禁用或注册失败且没有显式启动命令时暂时显示主窗。Launcher 关闭按钮只执行隐藏；未锁定且前台切换到其他进程后延迟收起，同进程的搜索、菜单和原生对话框不会触发误收起。运行期窗口锁定可由标题区或 `Ctrl+Space` 切换。托盘支持显示/隐藏、打开可复用的原生设置窗和退出，收到 `TaskbarCreated` 后重新添加。同一完整性级别下实测第二实例退出且主实例保持唯一。Shell 适配保持目标、逻辑参数和工作目录分离，支持 `open`/`runas` 并区分 UAC 取消。拖放接收 `CF_HDROP`、浏览器 URL 剪贴板格式和 Unicode URL 文本，文件属性与 URL 分类在后台完成，结果通过窗口消息回到 UI 线程。Shell 图标服务优先读取显式 `.ico`/EXE 图标，否则从目标取得系统图标，在后台转换成预乘 BGRA 像素并回送 UI。`.lnk` 启动解析、有限重试和不同完整性级别 UIPI 仍未实现。
+
+AppUserModelID 必须在创建 Launcher、搜索窗和托盘图标之前设置。失败只记录 HRESULT
+并继续运行，不能让任务栏身份能力成为启动阻断项。该 ID 是 Shell 身份契约，后续
+创建快捷方式、Jump List 或通知时必须复用，不得按安装路径或版本变化。
 
 ## Shell 启动与图标
 

@@ -1,6 +1,9 @@
 #include "ui/text_prompt_dialog.h"
 
 #include "ui/native_dialog_template.h"
+#include "ui/system_appearance.h"
+#include "ui/task_dialog.h"
+#include "ui/theme.h"
 
 #include <algorithm>
 
@@ -15,8 +18,29 @@ struct PromptState {
     std::wstring title;
     std::wstring label;
     std::wstring initialValue;
+    core::ThemeMode themeMode{core::ThemeMode::Dark};
+    SystemUiFont systemUiFont{};
     std::optional<std::wstring> result;
 };
+
+void refreshSystemAppearance(const HWND dialog, PromptState& state)
+{
+    static_cast<void>(state.systemUiFont.refresh(GetDpiForWindow(dialog)));
+    applySystemUiFont(dialog, state.systemUiFont.get());
+    applyNativeWindowTheme(dialog, state.themeMode);
+    EnumChildWindows(
+        dialog,
+        [](const HWND child, const LPARAM parameter) -> BOOL {
+            applyNativeControlTheme(
+                child,
+                static_cast<core::ThemeMode>(parameter));
+            return TRUE;
+        },
+        static_cast<LPARAM>(state.themeMode));
+    RedrawWindow(
+        dialog, nullptr, nullptr,
+        RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
+}
 
 void centerDialog(const HWND dialog, const HWND owner)
 {
@@ -39,7 +63,8 @@ INT_PTR CALLBACK promptProcedure(
         SetWindowLongPtrW(dialog, DWLP_USER, reinterpret_cast<LONG_PTR>(state));
         SetWindowTextW(dialog, state->title.c_str());
         centerDialog(dialog, GetParent(dialog));
-        const auto font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        static_cast<void>(state->systemUiFont.refresh(GetDpiForWindow(dialog)));
+        const auto font = state->systemUiFont.get();
         auto add = [&](const wchar_t* cls, const wchar_t* text, const DWORD style,
                        const int x, const int y, const int width, const int height,
                        const int id) {
@@ -59,6 +84,7 @@ INT_PTR CALLBACK promptProcedure(
         add(L"BUTTON", L"取消", WS_TABSTOP,
             286, 88, 80, 28, IDCANCEL);
         SendMessageW(edit, EM_SETSEL, 0, -1);
+        refreshSystemAppearance(dialog, *state);
         SetFocus(edit);
         return FALSE;
     }
@@ -72,8 +98,11 @@ INT_PTR CALLBACK promptProcedure(
             dialog, idValue, value.data(), static_cast<int>(value.size()));
         value.resize(static_cast<std::size_t>(std::max(0, copied)));
         if (value.empty()) {
-            MessageBoxW(dialog, L"名称不能为空。", state->title.c_str(),
-                        MB_OK | MB_ICONWARNING);
+            showTaskMessage(
+                dialog,
+                state->title,
+                L"名称不能为空。",
+                TaskDialogIcon::Warning);
             return TRUE;
         }
         state->result = std::move(value);
@@ -82,6 +111,21 @@ INT_PTR CALLBACK promptProcedure(
     }
     if ((message == WM_COMMAND && LOWORD(wParam) == IDCANCEL) || message == WM_CLOSE) {
         EndDialog(dialog, IDCANCEL);
+        return TRUE;
+    }
+    if (message == WM_DPICHANGED) {
+        const auto* suggested = reinterpret_cast<const RECT*>(lParam); // NOLINT(performance-no-int-to-ptr): WM_DPICHANGED defines LPARAM as RECT*.
+        SetWindowPos(
+            dialog, nullptr,
+            suggested->left, suggested->top,
+            suggested->right - suggested->left,
+            suggested->bottom - suggested->top,
+            SWP_NOACTIVATE | SWP_NOZORDER);
+        refreshSystemAppearance(dialog, *state);
+        return TRUE;
+    }
+    if (isSystemAppearanceMessage(message)) {
+        refreshSystemAppearance(dialog, *state);
         return TRUE;
     }
     return FALSE;
@@ -93,10 +137,11 @@ std::optional<std::wstring> showTextPromptDialog(
     const HWND owner,
     const std::wstring_view title,
     const std::wstring_view label,
-    const std::wstring_view initialValue)
+    const std::wstring_view initialValue,
+    const core::ThemeMode themeMode)
 {
     PromptState state{std::wstring{title}, std::wstring{label},
-                      std::wstring{initialValue}, std::nullopt};
+                      std::wstring{initialValue}, themeMode};
     const NativeDialogTemplate dialogTemplate{};
     const auto result = DialogBoxIndirectParamW(
         GetModuleHandleW(nullptr), dialogTemplate.get(), owner,

@@ -1,5 +1,6 @@
 #include "app/application.h"
 #include "app/command_line.h"
+#include "ui/task_dialog.h"
 
 #include <Windows.h>
 #include <CommCtrl.h>
@@ -40,7 +41,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
 
     const auto options = hlaunch::app::parseCommandLine(argumentViews);
     if (!options) {
-        MessageBoxW(nullptr, options.error().c_str(), L"HLaunch", MB_OK | MB_ICONERROR);
+        hlaunch::ui::showTaskMessage(
+            nullptr,
+            L"HLaunch",
+            L"启动参数无效。",
+            hlaunch::ui::TaskDialogIcon::Error,
+            options.error());
         return 3;
     }
 
