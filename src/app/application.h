@@ -12,8 +12,10 @@
 
 #include <Windows.h>
 
+#include <expected>
 #include <optional>
 #include <filesystem>
+#include <string>
 
 namespace hlaunch::app {
 
@@ -33,6 +35,8 @@ private:
     void launch(const core::LaunchItem& item);
     void showSettings();
     [[nodiscard]] bool changeAppearance(const core::AppearanceConfig& appearance);
+    [[nodiscard]] std::expected<void, std::wstring> changeActivation(
+        const core::ActivationConfig& activation);
 
     HINSTANCE instance_{};
     core::ApplicationConfig config_{};

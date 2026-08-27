@@ -14,6 +14,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <expected>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -152,14 +153,21 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
     CHECK(dark.accent != light.accent);
 
     auto selectedAppearance = hlaunch::core::AppearanceConfig{};
+    auto selectedActivation = hlaunch::core::ActivationConfig{};
     hlaunch::ui::SettingsWindow settings{};
     REQUIRE(settings.show(
         GetModuleHandleW(nullptr),
         nullptr,
         hlaunch::core::AppearanceConfig{},
+        hlaunch::core::ActivationConfig{},
         [&selectedAppearance](const hlaunch::core::AppearanceConfig& appearance) {
             selectedAppearance = appearance;
             return true;
+        },
+        [&selectedActivation](const hlaunch::core::ActivationConfig& activation)
+            -> std::expected<void, std::wstring> {
+            selectedActivation = activation;
+            return {};
         }));
     REQUIRE(settings.handle() != nullptr);
     CHECK(settings.isVisible());
@@ -188,15 +196,57 @@ TEST_CASE("UI-THEME-001 settings reuses one window and applies theme selection")
     SendMessageW(settings.handle(), WM_COMMAND, MAKEWPARAM(2005, BN_CLICKED), 0);
     CHECK(selectedAppearance.opacityPercent == 82);
 
+    const auto hotkeyEnabled = GetDlgItem(settings.handle(), 2010);
+    const auto altCheck = GetDlgItem(settings.handle(), 2011);
+    const auto controlCheck = GetDlgItem(settings.handle(), 2012);
+    const auto hotkeyKey = GetDlgItem(settings.handle(), 2015);
+    const auto edgeEnabled = GetDlgItem(settings.handle(), 2016);
+    const auto fullscreenCheck = GetDlgItem(settings.handle(), 2017);
+    REQUIRE(hotkeyEnabled != nullptr);
+    REQUIRE(altCheck != nullptr);
+    REQUIRE(controlCheck != nullptr);
+    REQUIRE(hotkeyKey != nullptr);
+    REQUIRE(edgeEnabled != nullptr);
+    REQUIRE(fullscreenCheck != nullptr);
+    CHECK(IsDlgButtonChecked(settings.handle(), 2010) == BST_CHECKED);
+    CHECK(IsDlgButtonChecked(settings.handle(), 2011) == BST_CHECKED);
+    CHECK(IsDlgButtonChecked(settings.handle(), 2016) == BST_UNCHECKED);
+    CHECK_FALSE(IsWindowEnabled(fullscreenCheck));
+
+    CheckDlgButton(settings.handle(), 2011, BST_UNCHECKED);
+    CheckDlgButton(settings.handle(), 2012, BST_CHECKED);
+    const auto keyB = SendMessageW(hotkeyKey, CB_FINDSTRINGEXACT,
+        static_cast<WPARAM>(-1),
+        reinterpret_cast<LPARAM>(L"B"));
+    REQUIRE(keyB != CB_ERR);
+    SendMessageW(hotkeyKey, CB_SETCURSEL, keyB, 0);
+    CheckDlgButton(settings.handle(), 2016, BST_CHECKED);
+    SendMessageW(settings.handle(), WM_COMMAND,
+        MAKEWPARAM(2016, BN_CLICKED), reinterpret_cast<LPARAM>(edgeEnabled));
+    CHECK(IsWindowEnabled(fullscreenCheck));
+    SendMessageW(settings.handle(), WM_COMMAND,
+        MAKEWPARAM(2018, BN_CLICKED), 0);
+    CHECK(selectedActivation.hotkey.enabled);
+    CHECK(selectedActivation.hotkey.modifiers
+        == std::vector{hlaunch::core::HotkeyModifier::Control});
+    CHECK(selectedActivation.hotkey.key == "B");
+    CHECK(selectedActivation.screenEdge.enabled);
+
     settings.hide();
     CHECK_FALSE(settings.isVisible());
     REQUIRE(settings.show(
         GetModuleHandleW(nullptr),
         nullptr,
         hlaunch::core::AppearanceConfig{},
+        hlaunch::core::ActivationConfig{},
         [&selectedAppearance](const hlaunch::core::AppearanceConfig& appearance) {
             selectedAppearance = appearance;
             return true;
+        },
+        [&selectedActivation](const hlaunch::core::ActivationConfig& activation)
+            -> std::expected<void, std::wstring> {
+            selectedActivation = activation;
+            return {};
         }));
     CHECK(settings.handle() == initialWindow);
     settings.hide();

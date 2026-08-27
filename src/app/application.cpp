@@ -1,5 +1,6 @@
 #include "app/application.h"
 
+#include "core/data_validation.h"
 #include "infrastructure/filesystem/data_paths.h"
 #include "infrastructure/filesystem/data_store.h"
 #include "infrastructure/logging/diagnostic_log.h"
@@ -536,8 +537,12 @@ void Application::showSettings()
             instance_,
             launcher_.handle(),
             config_.appearance,
+            config_.activation,
             [this](const core::AppearanceConfig& appearance) {
                 return changeAppearance(appearance);
+            },
+            [this](const core::ActivationConfig& activation) {
+                return changeActivation(activation);
             })) {
         MessageBoxW(
             launcher_.handle(),
@@ -545,6 +550,73 @@ void Application::showSettings()
             L"HLaunch 设置",
             MB_OK | MB_ICONERROR);
     }
+}
+
+std::expected<void, std::wstring> Application::changeActivation(
+    const core::ActivationConfig& activation)
+{
+    if (config_.activation == activation) {
+        return {};
+    }
+
+    auto updated = config_;
+    updated.activation = activation;
+    if (!core::validateConfig(updated).empty()) {
+        return std::unexpected(L"激活设置无效，请检查快捷键组合。");
+    }
+
+    const auto previous = config_.activation;
+    const auto hotkeyResult = hotkey_.apply(activationWindow_, activation.hotkey);
+    if (!hotkeyResult) {
+        infrastructure::logging::writeSystemError(
+            infrastructure::logging::Level::Warning,
+            "hotkey_settings_apply_failed",
+            hotkeyResult.error().systemCode);
+        if (hotkeyResult.error().code
+            == platform::windows::HotkeyErrorCode::RegistrationFailed) {
+            return std::unexpected(L"快捷键被系统或其他程序占用，已保留原设置。");
+        }
+        return std::unexpected(L"无法更新快捷键，已保留原设置。");
+    }
+
+    const auto targets = platform::windows::ScreenEdgeActivationTargets{
+        .activationWindow = activationWindow_,
+        .launcherWindow = launcher_.handle(),
+    };
+    if (!screenEdge_.start(targets, activation.screenEdge)) {
+        static_cast<void>(hotkey_.apply(activationWindow_, previous.hotkey));
+        static_cast<void>(screenEdge_.start(targets, previous.screenEdge));
+        infrastructure::logging::write(
+            infrastructure::logging::Level::Warning,
+            "screen_edge_settings_apply_failed");
+        return std::unexpected(L"无法启用屏幕边缘唤起，已恢复原设置。");
+    }
+
+    const auto saved = infrastructure::filesystem::saveConfig(configFile_, updated);
+    if (!saved) {
+        const auto hotkeyRestored = hotkey_.apply(activationWindow_, previous.hotkey);
+        const bool edgeRestored = screenEdge_.start(targets, previous.screenEdge);
+        infrastructure::logging::writeSystemError(
+            infrastructure::logging::Level::Error,
+            "config_activation_save_failed",
+            saved.error().systemCode);
+        if (!hotkeyRestored || !edgeRestored) {
+            infrastructure::logging::write(
+                infrastructure::logging::Level::Error,
+                "activation_settings_rollback_failed");
+        }
+        return std::unexpected(L"无法保存激活设置，已恢复原设置。");
+    }
+
+    config_ = std::move(updated);
+    settings_.setActivation(config_.activation);
+    infrastructure::logging::write(
+        infrastructure::logging::Level::Info,
+        "activation_settings_changed hotkey="
+            + std::string{config_.activation.hotkey.enabled ? "enabled" : "disabled"}
+            + " screen_edge="
+            + std::string{config_.activation.screenEdge.enabled ? "enabled" : "disabled"});
+    return {};
 }
 
 bool Application::changeAppearance(const core::AppearanceConfig& appearance)
