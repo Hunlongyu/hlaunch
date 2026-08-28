@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace hlaunch::platform::windows {
@@ -17,5 +18,11 @@ struct IconPixels
 
 [[nodiscard]] std::optional<IconPixels> convertIconToPixels(HICON icon,
                                                             std::uint32_t pixelSize);
+[[nodiscard]] std::optional<IconPixels> convertBitmapToPixels(
+    HBITMAP bitmap,
+    std::uint32_t pixelSize);
+[[nodiscard]] std::optional<IconPixels> decodeImageFileToPixels(
+    const std::wstring& path,
+    std::uint32_t pixelSize);
 
 } // namespace hlaunch::platform::windows

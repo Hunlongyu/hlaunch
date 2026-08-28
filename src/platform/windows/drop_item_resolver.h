@@ -8,6 +8,7 @@
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -16,18 +17,24 @@ namespace hlaunch::platform::windows {
 struct DropImportRequest
 {
     std::size_t targetTabIndex{};
+    std::optional<std::size_t> targetGridSlot{};
     std::vector<DroppedSource> sources{};
 };
 
 struct DropImportResult
 {
     std::size_t targetTabIndex{};
+    std::optional<std::size_t> targetGridSlot{};
     std::vector<core::LaunchItem> items{};
     std::size_t unsupportedCount{};
     bool failed{};
 };
 
 [[nodiscard]] DropImportResult resolveDroppedSources(const DropImportRequest &request);
+
+[[nodiscard]] std::optional<core::LaunchItem> makeDropLaunchItem(
+    core::LaunchItem item,
+    const std::vector<DroppedSource>& sources);
 
 class DropItemResolver final
 {

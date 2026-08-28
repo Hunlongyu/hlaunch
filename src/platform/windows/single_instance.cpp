@@ -2,6 +2,7 @@
 
 #include <Sddl.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -74,23 +75,46 @@ UINT activationMessageId() noexcept
     return message;
 }
 
-bool notifyPrimaryInstance(const ActivationCommand command) noexcept
+std::expected<void, PrimaryNotificationError> notifyPrimaryInstance(
+    const ActivationCommand command,
+    const PrimaryNotificationOptions& options) noexcept
 {
-    const auto window = FindWindowW(activationWindowClassName, nullptr);
+    HWND window{};
+    const auto attempts = std::max(1U, options.findAttempts);
+    for (unsigned int attempt = 0; attempt < attempts; ++attempt) {
+        window = FindWindowW(activationWindowClassName, nullptr);
+        if (window) {
+            break;
+        }
+        if (attempt + 1U < attempts && options.retryDelayMilliseconds > 0U) {
+            Sleep(options.retryDelayMilliseconds);
+        }
+    }
     if (!window) {
-        return false;
+        return std::unexpected(PrimaryNotificationError{
+            PrimaryNotificationErrorCode::WindowNotFound,
+            ERROR_FILE_NOT_FOUND,
+        });
     }
 
     DWORD_PTR ignoredResult = 0;
-    return SendMessageTimeoutW(
-               window,
-               activationMessageId(),
-               static_cast<WPARAM>(command),
-               0,
-               SMTO_ABORTIFHUNG | SMTO_BLOCK,
-               1'000,
-               &ignoredResult)
-        != 0;
+    SetLastError(ERROR_SUCCESS);
+    if (SendMessageTimeoutW(
+            window,
+            activationMessageId(),
+            static_cast<WPARAM>(command),
+            0,
+            SMTO_ABORTIFHUNG | SMTO_BLOCK,
+            options.sendTimeoutMilliseconds,
+            &ignoredResult)
+        == 0) {
+        const auto code = GetLastError();
+        return std::unexpected(PrimaryNotificationError{
+            PrimaryNotificationErrorCode::DeliveryFailed,
+            code == ERROR_SUCCESS ? ERROR_TIMEOUT : code,
+        });
+    }
+    return {};
 }
 
 } // namespace hlaunch::platform::windows

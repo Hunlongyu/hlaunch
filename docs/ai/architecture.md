@@ -13,7 +13,7 @@ Infrastructure ◄── App/Core/Platform
 ```
 
 - `app`：进程生命周期、命令行、单实例、服务装配。
-- `core`：Item、Tab、Search、Theme 和 Config 的领域模型与用例；不依赖 HWND、Direct2D 或 JSON 库类型。
+- `core`：Item、Tab、Search 和 Config 的领域模型与用例；不依赖 HWND、Direct2D 或 JSON 库类型。
 - `ui`：Launcher、Grid、Tab、Search、Settings、Context Menu；负责输入、布局和呈现。
 - `graphics`：Direct2D、DirectWrite、WIC、设备资源和缓存。
 - `activation`：快捷键、边缘停留、热区、全屏判断；只产生 `ActivationContext`。
@@ -50,7 +50,7 @@ HotkeyTrigger / EdgeDwellTrigger
 ## 线程模型
 
 - UI 主线程拥有消息循环、HWND、输入、布局、渲染和动画。
-- 图标提取、主题解码、磁盘 I/O 和较重 Shell 查询在后台执行。
+- 图标提取、磁盘 I/O 和较重 Shell 查询在后台执行。
 - 后台任务不可直接操作 HWND、Direct2D 窗口资源或 UI 集合；通过自定义窗口消息或调度器把不可变结果投递到 UI 线程。
 - 线程池定时器回调可能并发或与关闭竞态。状态必须串行化，并在析构前取消定时器、等待回调完成。
 - 少量有明确所有权的长任务可用 `std::jthread`；不引入通用并发框架。
@@ -59,6 +59,7 @@ HotkeyTrigger / EdgeDwellTrigger
 
 - Application 层拥有 COM/OLE 初始化、服务装配与反向销毁顺序。
 - D2D/DWrite/WIC factory 可为进程级；窗口设备资源跟随 HWND/设备生命周期。
+- 每个可跨显示器的顶层 HWND 独立使用 `GetDpiForWindow`/`WM_DPICHANGED` 管理几何与设备资源，不能沿用所有者窗口或进程启动时的 DPI。
 - 渲染器必须处理 device lost，区分 device-independent 与 device-dependent 资源。
 - Named Mutex 必须由主实例在整个进程生命周期持有；IPC 只负责激活，不承担所有权锁。
 
@@ -66,7 +67,7 @@ HotkeyTrigger / EdgeDwellTrigger
 
 ```text
 src/{app,core,ui,graphics,activation,platform/windows,infrastructure}/
-resources/{themes,icons}/
+resources/{branding,windows}/
 tests/
 docs/ai/
 ```

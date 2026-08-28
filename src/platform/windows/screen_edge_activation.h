@@ -2,6 +2,7 @@
 
 #include "activation/screen_edge_state.h"
 #include "core/data_model.h"
+#include "platform/windows/foreground_process_filter.h"
 
 #include <Windows.h>
 #include <wil/resource.h>
@@ -39,13 +40,16 @@ public:
     [[nodiscard]] std::optional<activation::ScreenEdgeHit> takePendingActivation();
 
 private:
-    static void CALLBACK timerCallback(PTP_CALLBACK_INSTANCE, void* context, PTP_TIMER);
+    static void CALLBACK timerCallback(PTP_CALLBACK_INSTANCE, void* context, PTP_TIMER) noexcept;
     void sample() noexcept;
 
     mutable std::mutex mutex_{};
     HWND activationWindow_{};
     HWND launcherWindow_{};
     core::ScreenEdgeConfig config_{};
+    ForegroundProcessFilter foregroundProcessFilter_{};
+    HWND cachedForegroundWindow_{};
+    bool cachedForegroundSuppressed_{};
     std::vector<activation::MonitorGeometry> monitors_{};
     activation::EdgeDwellStateMachine state_{{300, 500}};
     std::optional<activation::ScreenEdgeHit> pendingActivation_{};

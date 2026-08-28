@@ -2,14 +2,18 @@
 
 #include "platform/windows/window_effects.h"
 #include "ui/launcher_layout.h"
-#include "ui/theme.h"
+#include "ui/system_appearance.h"
+#include "ui/visual_style.h"
 
 #include <Windows.h>
 #include <d2d1.h>
 #include <dwrite.h>
+#include <CommCtrl.h>
+#include <wil/resource.h>
 #include <winrt/base.h>
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -30,10 +34,8 @@ public:
         HINSTANCE instance,
         HWND owner,
         const platform::windows::WindowEffects& effects,
-        core::ThemeMode themeMode,
         QueryChangedHandler queryChangedHandler,
         KeyHandler keyHandler);
-    void setThemeMode(core::ThemeMode themeMode);
     void setWindowEffects(const platform::windows::WindowEffects& effects);
     void refreshSystemAppearance();
     void show();
@@ -50,27 +52,35 @@ private:
         HWND window,
         UINT message,
         WPARAM wParam,
-        LPARAM lParam);
-    LRESULT handleMessage(UINT message, WPARAM wParam, LPARAM lParam);
+        LPARAM lParam) noexcept;
+    LRESULT handleMessage(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+    static LRESULT CALLBACK editSubclassProcedure(HWND, UINT, WPARAM, LPARAM, UINT_PTR, DWORD_PTR) noexcept;
 
     [[nodiscard]] bool createDeviceIndependentResources();
     [[nodiscard]] bool createTextFormat();
     [[nodiscard]] bool createDeviceResources();
     void discardDeviceResources() noexcept;
+    void createEditControl();
+    void applyEditSurface();
+    void applyEditFont();
+    void positionEditControl() noexcept;
     void notifyQueryChanged();
     void eraseLastCharacter();
     void pasteClipboardText();
     void render();
 
     HWND window_{};
+    HWND edit_{};
     UINT dpi_{96};
     bool translucentSurface_{true};
+    bool suppressEditChange_{};
     platform::windows::WindowEffects windowEffects_{};
-    core::ThemeMode themeMode_{core::ThemeMode::Dark};
     SearchPopupLayout layout_{};
     std::wstring query_{};
     QueryChangedHandler queryChangedHandler_{};
     KeyHandler keyHandler_{};
+    SystemUiFont editFont_{};
+    wil::unique_hbrush editBackgroundBrush_{};
     winrt::com_ptr<ID2D1Factory> d2dFactory_{};
     winrt::com_ptr<IDWriteFactory> writeFactory_{};
     winrt::com_ptr<ID2D1HwndRenderTarget> renderTarget_{};
@@ -80,6 +90,7 @@ private:
     winrt::com_ptr<ID2D1SolidColorBrush> textBrush_{};
     winrt::com_ptr<ID2D1SolidColorBrush> queryTextBrush_{};
     winrt::com_ptr<ID2D1SolidColorBrush> borderBrush_{};
+    winrt::com_ptr<ID2D1SolidColorBrush> focusBrush_{};
 };
 
 } // namespace hlaunch::ui

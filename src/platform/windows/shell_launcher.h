@@ -31,8 +31,12 @@ struct ShellLaunchResult {
 [[nodiscard]] std::wstring quoteWindowsArgument(std::wstring_view argument);
 [[nodiscard]] std::expected<std::wstring, ShellLaunchError> buildShellParameterString(
     const std::vector<std::string>& arguments);
+[[nodiscard]] std::expected<std::wstring, ShellLaunchError> buildShellCommandLine(
+    const core::LaunchItem& item);
 [[nodiscard]] std::expected<ShellLaunchResult, ShellLaunchError> launchItem(
     HWND owner,
+    const core::LaunchItem& item);
+[[nodiscard]] std::expected<void, ShellLaunchError> openItemLocation(
     const core::LaunchItem& item);
 
 } // namespace hlaunch::platform::windows

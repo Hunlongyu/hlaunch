@@ -14,11 +14,12 @@
 | 测试 | doctest，仅测试目标 |
 | 发布 | x64 Release，静态 CRT `/MT` |
 
-“单 EXE”表示不附带 VC++ Redistributable、Qt、.NET、WebView2 或第三方运行时 DLL；配置、日志、缓存和用户主题是正常外部数据。
+“单 EXE”表示不附带 VC++ Redistributable、Qt、.NET、WebView2 或第三方运行时 DLL；配置、日志和缓存是正常外部数据。
 
 ## 构建规则
 
 - `CMakeLists.txt` 是唯一权威构建定义，生成的 `.sln` 不是。
+- 根 `CMakeLists.txt` 的 `project(HLaunch VERSION ...)` 是应用版本的唯一来源；构建时同步生成 EXE `VERSIONINFO`、Manifest 并注入托盘提示。版本从 `0.1.0` 开始，每完成一项用户可见功能或 Bug 修复，在交付前递增补丁位；普通 Debug 重编译、文档整理或无行为变化的构建不得自动递增版本。
 - 使用 target-based CMake，不使用全局 `include_directories()` 或 `add_definitions()`。
 - 建议目标：`HLaunch::Core`、`HLaunch::Graphics`、`HLaunch::Platform`、`HLaunch::UI` 和最终 `HLaunch`。
 - 用 `CMAKE_CXX_STANDARD 23` 表达标准，不在文档中把 `/std:c++latest` 当成稳定 ABI/语言契约。
@@ -54,13 +55,13 @@ Glaze 仅能出现在 `infrastructure/json` 适配层。持久化 DTO 与领域�
 
 - EXE Manifest 依赖 `Microsoft.Windows.Common-Controls` 6.0，进程启动时调用
   `InitCommonControlsEx`，最终目标显式链接 `comctl32`。标准 Win32 控件和原生
-  对话框因此使用系统提供的视觉样式；不能用自绘主窗的主题契约推断它们的外观。
+  对话框因此使用系统提供的视觉样式；不能用自绘主窗的固定视觉推断它们的外观。
 - 用户提示、错误和破坏性确认优先通过运行时解析的 `TaskDialogIndirect` 显示；
   缺少 Common Controls v6 导出或调用失败时回退到 `MessageBoxW`，不能让导入
   表问题阻止进程启动。确认对话框默认按钮必须保持为“否”。
 - Platform 层封装 DWM 背景材质、边框颜色、圆角和窗口整体透明度，UI 层只选择效果并渲染透明表面。
 - 使用 Windows SDK 的 `DWMWA_SYSTEMBACKDROP_TYPE`、`DwmExtendFrameIntoClientArea` 和 `DwmEnableBlurBehindWindow`；不使用未公开的 `SetWindowCompositionAttribute`。
-- 请求的材质不可用时按 DWM 系统背景 > 系统模糊 > 半透明主题表面的顺序降级，任何一级失败都不能阻止窗口显示。
+- 请求的材质不可用时按 DWM 系统背景 > 系统模糊 > 半透明内置表面的顺序降级，任何一级失败都不能阻止窗口显示。
 - Direct2D 透明窗口使用 BGRA premultiplied alpha；文字与关键状态色保持完整 alpha。
 
 ## 明确不引入
@@ -69,4 +70,4 @@ V1 不使用 Qt、WinUI 3、Windows App SDK、WTL、ATL、WRL、Boost、TBB、li
 
 ## 系统库
 
-当前链接 user32、shell32、ole32、advapi32、d2d1、dwrite、windowscodecs、dwmapi、shcore、shlwapi、uxtheme 和 comctl32；`shcore` 用于按显示器取得有效 DPI，`comctl32` 用于初始化 v6 原生控件。只有实际使用时才加入其他系统库。P1 在线更新和崩溃转储分别需要 winhttp 与 dbghelp。
+当前链接 user32、shell32、ole32、advapi32、d2d1、dwrite、windowscodecs、dwmapi、shcore、shlwapi、uxtheme、comctl32 和 comdlg32；`shcore` 用于按显示器取得有效 DPI，`comctl32` 用于初始化 v6 原生控件，`comdlg32` 用于文件与文件夹选择。只有实际使用时才加入其他系统库。当前不实现在线更新或崩溃转储，因此不引入 winhttp 或 dbghelp。

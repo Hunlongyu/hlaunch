@@ -1,9 +1,10 @@
 #include "ui/text_prompt_dialog.h"
+#include "ui/dpi_layout.h"
 
 #include "ui/native_dialog_template.h"
 #include "ui/system_appearance.h"
 #include "ui/task_dialog.h"
-#include "ui/theme.h"
+#include "ui/visual_style.h"
 
 #include <algorithm>
 
@@ -18,25 +19,23 @@ struct PromptState {
     std::wstring title;
     std::wstring label;
     std::wstring initialValue;
-    core::ThemeMode themeMode{core::ThemeMode::Dark};
     SystemUiFont systemUiFont{};
     std::optional<std::wstring> result;
+    std::vector<DialogControlLayout> controlLayouts;
 };
 
 void refreshSystemAppearance(const HWND dialog, PromptState& state)
 {
     static_cast<void>(state.systemUiFont.refresh(GetDpiForWindow(dialog)));
     applySystemUiFont(dialog, state.systemUiFont.get());
-    applyNativeWindowTheme(dialog, state.themeMode);
+    applyNativeWindowStyle(dialog, false);
     EnumChildWindows(
         dialog,
-        [](const HWND child, const LPARAM parameter) -> BOOL {
-            applyNativeControlTheme(
-                child,
-                static_cast<core::ThemeMode>(parameter));
+        [](const HWND child, const LPARAM) noexcept -> BOOL {
+            applyNativeControlStyle(child, false);
             return TRUE;
         },
-        static_cast<LPARAM>(state.themeMode));
+        0);
     RedrawWindow(
         dialog, nullptr, nullptr,
         RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
@@ -45,18 +44,22 @@ void refreshSystemAppearance(const HWND dialog, PromptState& state)
 void centerDialog(const HWND dialog, const HWND owner)
 {
     RECT ownerBounds{};
+    const UINT dpi = GetDpiForWindow(dialog);
+    const int width = scaleDip(promptWidth, dpi);
+    const int height = scaleDip(promptHeight, dpi);
     GetWindowRect(owner, &ownerBounds);
     const int x = ownerBounds.left
-        + std::max<LONG>(0, (ownerBounds.right - ownerBounds.left - promptWidth) / 2);
+        + std::max<LONG>(0, (ownerBounds.right - ownerBounds.left - width) / 2);
     const int y = ownerBounds.top
-        + std::max<LONG>(0, (ownerBounds.bottom - ownerBounds.top - promptHeight) / 2);
-    SetWindowPos(dialog, nullptr, x, y, promptWidth, promptHeight,
+        + std::max<LONG>(0, (ownerBounds.bottom - ownerBounds.top - height) / 2);
+    SetWindowPos(dialog, nullptr, x, y, width, height,
                  SWP_NOACTIVATE | SWP_NOZORDER);
 }
 
 INT_PTR CALLBACK promptProcedure(
-    const HWND dialog, const UINT message, const WPARAM wParam, const LPARAM lParam)
+    const HWND dialog, const UINT message, const WPARAM wParam, const LPARAM lParam) noexcept
 {
+    try {
     auto* state = reinterpret_cast<PromptState*>(GetWindowLongPtrW(dialog, DWLP_USER));
     if (message == WM_INITDIALOG) {
         state = reinterpret_cast<PromptState*>(lParam);
@@ -65,14 +68,17 @@ INT_PTR CALLBACK promptProcedure(
         centerDialog(dialog, GetParent(dialog));
         static_cast<void>(state->systemUiFont.refresh(GetDpiForWindow(dialog)));
         const auto font = state->systemUiFont.get();
+        const UINT dpi = GetDpiForWindow(dialog);
         auto add = [&](const wchar_t* cls, const wchar_t* text, const DWORD style,
                        const int x, const int y, const int width, const int height,
                        const int id) {
             const auto control = CreateWindowExW(
-                0, cls, text, WS_CHILD | WS_VISIBLE | style, x, y, width, height,
+                0, cls, text, WS_CHILD | WS_VISIBLE | style, scaleDip(x, dpi), scaleDip(y, dpi),
+                scaleDip(width, dpi), scaleDip(height, dpi),
                 dialog, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                 GetModuleHandleW(nullptr), nullptr);
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+            state->controlLayouts.push_back({control, x, y, width, height});
             return control;
         };
         add(L"STATIC", state->label.c_str(), 0, 16, 18, 350, 20, 0);
@@ -121,6 +127,7 @@ INT_PTR CALLBACK promptProcedure(
             suggested->right - suggested->left,
             suggested->bottom - suggested->top,
             SWP_NOACTIVATE | SWP_NOZORDER);
+        layoutDialogControls(state->controlLayouts, GetDpiForWindow(dialog));
         refreshSystemAppearance(dialog, *state);
         return TRUE;
     }
@@ -129,6 +136,7 @@ INT_PTR CALLBACK promptProcedure(
         return TRUE;
     }
     return FALSE;
+    } catch (...) { if (IsWindow(dialog)) EndDialog(dialog, IDCANCEL); return FALSE; }
 }
 
 } // namespace
@@ -137,11 +145,10 @@ std::optional<std::wstring> showTextPromptDialog(
     const HWND owner,
     const std::wstring_view title,
     const std::wstring_view label,
-    const std::wstring_view initialValue,
-    const core::ThemeMode themeMode)
+    const std::wstring_view initialValue)
 {
     PromptState state{std::wstring{title}, std::wstring{label},
-                      std::wstring{initialValue}, themeMode};
+                      std::wstring{initialValue}};
     const NativeDialogTemplate dialogTemplate{};
     const auto result = DialogBoxIndirectParamW(
         GetModuleHandleW(nullptr), dialogTemplate.get(), owner,

@@ -27,9 +27,10 @@ bool hasIssue(const Result& result, const JsonIssueCode code, const std::string_
 constexpr std::string_view validConfig = R"({
   "futureRoot": true,
   "appearance": {
-    "theme": "dark",
     "backdrop": "acrylic",
-    "opacityPercent": 95
+    "opacityPercent": 95,
+    "gridColumns": 6,
+    "gridRows": 9
   },
   "activation": {
     "screenEdge": {
@@ -42,6 +43,8 @@ constexpr std::string_view validConfig = R"({
       "edgeMode": "desktopOuter",
       "zones": ["left"],
       "enabled": false,
+      "foregroundProcessBlocklist": ["game.exe"],
+      "foregroundProcessAllowlist": ["mstsc.exe"],
       "futureEdge": "ignored"
     },
     "hotkey": {
@@ -51,6 +54,9 @@ constexpr std::string_view validConfig = R"({
       "enabled": true,
       "futureHotkey": 1
     }
+  },
+  "diagnostics": {
+    "loggingEnabled": false
   },
   "schemaVersion": 1
 })";
@@ -85,9 +91,10 @@ TEST_CASE("DATA-CONFIG-001 config accepts unordered and unknown fields")
 
     REQUIRE(result.hasValue());
     CHECK(result.issues.empty());
-    CHECK(result.value->appearance.theme == hlaunch::core::ThemeMode::Dark);
     CHECK(result.value->appearance.backdrop == hlaunch::core::BackdropMode::Acrylic);
     CHECK(result.value->appearance.opacityPercent == 95);
+    CHECK(result.value->appearance.gridColumns == 6);
+    CHECK(result.value->appearance.gridRows == 9);
     CHECK(result.value->activation.hotkey.enabled);
     CHECK(result.value->activation.hotkey.key == "Space");
     CHECK(result.value->activation.hotkey.modifiers
@@ -95,9 +102,28 @@ TEST_CASE("DATA-CONFIG-001 config accepts unordered and unknown fields")
     CHECK_FALSE(result.value->activation.screenEdge.enabled);
     CHECK(result.value->activation.screenEdge.zones
         == std::vector{hlaunch::core::ScreenEdgeZone::Left});
+    CHECK(result.value->activation.screenEdge.foregroundProcessBlocklist
+        == std::vector<std::string>{"game.exe"});
+    CHECK(result.value->activation.screenEdge.foregroundProcessAllowlist
+        == std::vector<std::string>{"mstsc.exe"});
+    CHECK_FALSE(result.value->diagnostics.loggingEnabled);
 }
 
-TEST_CASE("DATA-CONFIG-001 legacy config without appearance keeps the dark theme")
+TEST_CASE("QUALITY-LOG-001 config without diagnostics keeps logging enabled")
+{
+    std::string legacy{validConfig};
+    const auto start = legacy.find("  \"diagnostics\": {");
+    REQUIRE(start != std::string::npos);
+    const auto end = legacy.find("  \"schemaVersion\":", start);
+    REQUIRE(end != std::string::npos);
+    legacy.erase(start, end - start);
+
+    const auto result = hlaunch::infrastructure::json::decodeConfig(legacy);
+    REQUIRE(result.hasValue());
+    CHECK(result.value->diagnostics.loggingEnabled);
+}
+
+TEST_CASE("DATA-CONFIG-001 config without appearance uses built-in appearance defaults")
 {
     std::string legacy{validConfig};
     const auto start = legacy.find("  \"appearance\": {");
@@ -108,36 +134,24 @@ TEST_CASE("DATA-CONFIG-001 legacy config without appearance keeps the dark theme
 
     const auto result = hlaunch::infrastructure::json::decodeConfig(legacy);
     REQUIRE(result.hasValue());
-    CHECK(result.issues.empty());
-    CHECK(result.value->appearance.theme == hlaunch::core::ThemeMode::Dark);
-    CHECK(result.value->appearance.backdrop == hlaunch::core::BackdropMode::Acrylic);
-    CHECK(result.value->appearance.opacityPercent == 95);
+    CHECK(result.value->appearance == hlaunch::core::AppearanceConfig{});
 }
 
 TEST_CASE("DATA-CONFIG-001 legacy appearance defaults material and opacity")
 {
     std::string legacy{validConfig};
-    const auto backdrop = legacy.find(",\n    \"backdrop\": \"acrylic\"");
-    REQUIRE(backdrop != std::string::npos);
-    const auto opacityEnd = legacy.find("\n", legacy.find("\"opacityPercent\"", backdrop));
-    REQUIRE(opacityEnd != std::string::npos);
-    legacy.erase(backdrop, opacityEnd - backdrop);
+    const auto appearance = legacy.find("  \"appearance\": {");
+    REQUIRE(appearance != std::string::npos);
+    const auto activation = legacy.find("  \"activation\":", appearance);
+    REQUIRE(activation != std::string::npos);
+    legacy.replace(
+        appearance,
+        activation - appearance,
+        "  \"appearance\": {},\n");
     const auto result = hlaunch::infrastructure::json::decodeConfig(legacy);
     REQUIRE(result.hasValue());
     CHECK(result.value->appearance.backdrop == hlaunch::core::BackdropMode::Acrylic);
     CHECK(result.value->appearance.opacityPercent == 95);
-}
-
-TEST_CASE("DATA-CONFIG-001 rejects an unknown appearance theme")
-{
-    std::string invalid{validConfig};
-    const auto position = invalid.find("\"theme\": \"dark\"");
-    REQUIRE(position != std::string::npos);
-    invalid.replace(position, std::string{"\"theme\": \"dark\""}.size(), "\"theme\": \"neon\"");
-
-    const auto result = hlaunch::infrastructure::json::decodeConfig(invalid);
-    CHECK_FALSE(result.hasValue());
-    CHECK(hasIssue(result, JsonIssueCode::Validation, "$.appearance.theme"));
 }
 
 TEST_CASE("DATA-CONFIG-001 rejects invalid appearance material and opacity")
@@ -159,6 +173,28 @@ TEST_CASE("DATA-CONFIG-001 rejects invalid appearance material and opacity")
     const auto opacityResult = hlaunch::infrastructure::json::decodeConfig(invalidOpacity);
     CHECK_FALSE(opacityResult.hasValue());
     CHECK(hasIssue(opacityResult, JsonIssueCode::Validation, "$.appearance.opacityPercent"));
+}
+
+TEST_CASE("DATA-CONFIG-001 rejects invalid launcher grid dimensions")
+{
+    std::string invalidColumns{validConfig};
+    const auto columns = invalidColumns.find("\"gridColumns\": 6");
+    REQUIRE(columns != std::string::npos);
+    invalidColumns.replace(
+        columns,
+        std::string{"\"gridColumns\": 6"}.size(),
+        "\"gridColumns\": 2");
+    const auto columnsResult = hlaunch::infrastructure::json::decodeConfig(invalidColumns);
+    CHECK_FALSE(columnsResult.hasValue());
+    CHECK(hasIssue(columnsResult, JsonIssueCode::Validation, "$.appearance.gridColumns"));
+
+    std::string invalidRows{validConfig};
+    const auto rows = invalidRows.find("\"gridRows\": 9");
+    REQUIRE(rows != std::string::npos);
+    invalidRows.replace(rows, std::string{"\"gridRows\": 9"}.size(), "\"gridRows\": 21");
+    const auto rowsResult = hlaunch::infrastructure::json::decodeConfig(invalidRows);
+    CHECK_FALSE(rowsResult.hasValue());
+    CHECK(hasIssue(rowsResult, JsonIssueCode::Validation, "$.appearance.gridRows"));
 }
 
 TEST_CASE("DATA-CONFIG-001 does not treat a malformed appearance as legacy config")
@@ -206,7 +242,35 @@ TEST_CASE("DATA-CONFIG-001 config rejects invalid ranges and missing required fi
     constexpr std::string_view missingKey = R"({"schemaVersion":1,"activation":{}})";
     const auto missingResult = hlaunch::infrastructure::json::decodeConfig(missingKey);
     CHECK_FALSE(missingResult.hasValue());
-    CHECK(hasIssue(missingResult, JsonIssueCode::InvalidJson, "$"));
+    CHECK(std::ranges::any_of(missingResult.issues, [](const JsonIssue& issue) {
+        return issue.code == JsonIssueCode::Validation;
+    }));
+}
+
+TEST_CASE("ACT-EDGE-001 config validates foreground process lists")
+{
+    std::string invalidPath{validConfig};
+    const auto entry = invalidPath.find("\"game.exe\"");
+    REQUIRE(entry != std::string::npos);
+    invalidPath.replace(entry, std::string{"\"game.exe\""}.size(), "\"C:\\\\Games\\\\game.exe\"");
+    const auto pathResult = hlaunch::infrastructure::json::decodeConfig(invalidPath);
+    CHECK_FALSE(pathResult.hasValue());
+    CHECK(hasIssue(
+        pathResult,
+        JsonIssueCode::Validation,
+        "$.activation.screenEdge.foregroundProcessBlocklist[0]"));
+
+    std::string invalidExtension{validConfig};
+    const auto executable = invalidExtension.find("\"mstsc.exe\"");
+    REQUIRE(executable != std::string::npos);
+    invalidExtension.replace(
+        executable, std::string{"\"mstsc.exe\""}.size(), "\"mstsc.dll\"");
+    const auto extensionResult = hlaunch::infrastructure::json::decodeConfig(invalidExtension);
+    CHECK_FALSE(extensionResult.hasValue());
+    CHECK(hasIssue(
+        extensionResult,
+        JsonIssueCode::Validation,
+        "$.activation.screenEdge.foregroundProcessAllowlist[0]"));
 }
 
 TEST_CASE("DATA-CONFIG-001 config rejects malformed JSON and invalid UTF-8")
@@ -266,12 +330,14 @@ TEST_CASE("DATA-CONFIG-001 items decode and round trip")
     REQUIRE(decoded.value->tabs.size() == 1);
     REQUIRE(decoded.value->tabs[0].items.size() == 1);
     CHECK(decoded.value->tabs[0].items[0].type == hlaunch::core::ItemType::Application);
+    CHECK(decoded.value->tabs[0].items[0].gridSlot == 0U);
     CHECK((decoded.value->tabs[0].items[0].arguments == std::vector<std::string>{"--profile", "work"}));
 
     const auto encoded = hlaunch::infrastructure::json::encodeItems(*decoded.value);
     REQUIRE(encoded.has_value());
     CHECK(encoded->find("\"workingDirectory\":null") != std::string::npos);
     CHECK(encoded->find("\"lastLaunchedAt\":") != std::string::npos);
+    CHECK(encoded->find("\"gridSlot\":0") != std::string::npos);
 
     const auto roundTrip = hlaunch::infrastructure::json::decodeItems(*encoded);
     REQUIRE(roundTrip.hasValue());

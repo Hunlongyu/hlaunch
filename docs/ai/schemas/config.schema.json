@@ -3,16 +3,16 @@
   "$id": "https://hlaunch.local/schemas/config.schema.json",
   "title": "HLaunch config.json v1",
   "type": "object",
-  "required": ["schemaVersion", "activation"],
+  "required": ["schemaVersion", "appearance", "activation"],
   "properties": {
     "schemaVersion": { "const": 1 },
     "appearance": {
       "type": "object",
-      "required": ["theme"],
       "properties": {
-        "theme": { "enum": ["dark", "light"], "default": "dark" },
         "backdrop": { "enum": ["solid", "mica", "acrylic", "tabbed"], "default": "acrylic" },
-        "opacityPercent": { "type": "integer", "minimum": 30, "maximum": 100, "default": 95 }
+        "opacityPercent": { "type": "integer", "minimum": 30, "maximum": 100, "default": 95 },
+        "gridColumns": { "type": "integer", "minimum": 3, "maximum": 20, "default": 5 },
+        "gridRows": { "type": "integer", "minimum": 3, "maximum": 20, "default": 8 }
       },
       "additionalProperties": true
     },
@@ -54,10 +54,31 @@
             "dwellMs": { "type": "integer", "minimum": 100, "maximum": 1000, "default": 300 },
             "pollMs": { "type": "integer", "minimum": 30, "maximum": 50, "default": 40 },
             "cooldownMs": { "type": "integer", "minimum": 0, "maximum": 5000, "default": 500 },
-            "disableOnFullscreen": { "type": "boolean", "default": true }
+            "disableOnFullscreen": { "type": "boolean", "default": true },
+            "foregroundProcessBlocklist": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 5, "maxLength": 260, "pattern": "^[^\\\\/:*?\"<>|]+\\.[eE][xX][eE]$" },
+              "maxItems": 64,
+              "uniqueItems": true,
+              "default": []
+            },
+            "foregroundProcessAllowlist": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 5, "maxLength": 260, "pattern": "^[^\\\\/:*?\"<>|]+\\.[eE][xX][eE]$" },
+              "maxItems": 64,
+              "uniqueItems": true,
+              "default": []
+            }
           },
           "additionalProperties": true
         }
+      },
+      "additionalProperties": true
+    },
+    "diagnostics": {
+      "type": "object",
+      "properties": {
+        "loggingEnabled": { "type": "boolean", "default": true }
       },
       "additionalProperties": true
     }

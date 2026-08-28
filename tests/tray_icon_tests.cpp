@@ -2,6 +2,8 @@
 
 #include "platform/windows/tray_icon.h"
 
+#include "app_version.h"
+
 #include <doctest/doctest.h>
 
 #include <Windows.h>
@@ -75,4 +77,11 @@ TEST_CASE("PLAT-TRAY-001 adds, dispatches and removes the Explorer tray icon")
 
     tray.stop();
     CHECK_FALSE(tray.isAdded());
+}
+
+TEST_CASE("PLAT-TRAY-001 tooltip shows the product name and current version")
+{
+    const auto tooltip = hlaunch::platform::windows::trayIconTooltipText();
+    CHECK(tooltip.starts_with(L"HLaunch\nv"));
+    CHECK(tooltip.substr(tooltip.find(L'v') + 1U) == hlaunch::applicationVersionWide);
 }

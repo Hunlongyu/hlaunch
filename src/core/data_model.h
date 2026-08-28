@@ -8,7 +8,12 @@
 namespace hlaunch::core {
 
 inline constexpr std::uint32_t currentSchemaVersion = 1;
-
+inline constexpr std::uint16_t defaultLauncherGridColumns = 5;
+inline constexpr std::uint16_t defaultLauncherGridRows = 8;
+inline constexpr std::uint16_t minimumLauncherGridColumns = 3;
+inline constexpr std::uint16_t minimumLauncherGridRows = 3;
+inline constexpr std::uint16_t maximumLauncherGridColumns = 20;
+inline constexpr std::uint16_t maximumLauncherGridRows = 20;
 enum class HotkeyModifier {
     Alt,
     Control,
@@ -20,11 +25,6 @@ enum class HotkeyBehavior {
     Toggle,
 };
 
-enum class ThemeMode {
-    Dark,
-    Light,
-};
-
 enum class BackdropMode {
     Solid,
     Mica,
@@ -33,9 +33,10 @@ enum class BackdropMode {
 };
 
 struct AppearanceConfig {
-    ThemeMode theme{ThemeMode::Dark};
     BackdropMode backdrop{BackdropMode::Acrylic};
     std::uint8_t opacityPercent{95};
+    std::uint16_t gridColumns{defaultLauncherGridColumns};
+    std::uint16_t gridRows{defaultLauncherGridRows};
 
     bool operator==(const AppearanceConfig&) const = default;
 };
@@ -75,6 +76,8 @@ struct ScreenEdgeConfig {
     std::uint32_t pollMs{40};
     std::uint32_t cooldownMs{500};
     bool disableOnFullscreen{true};
+    std::vector<std::string> foregroundProcessBlocklist{};
+    std::vector<std::string> foregroundProcessAllowlist{};
 
     bool operator==(const ScreenEdgeConfig&) const = default;
 };
@@ -86,10 +89,17 @@ struct ActivationConfig {
     bool operator==(const ActivationConfig&) const = default;
 };
 
+struct DiagnosticsConfig {
+    bool loggingEnabled{true};
+
+    bool operator==(const DiagnosticsConfig&) const = default;
+};
+
 struct ApplicationConfig {
     std::uint32_t schemaVersion{currentSchemaVersion};
     AppearanceConfig appearance{};
     ActivationConfig activation{};
+    DiagnosticsConfig diagnostics{};
 
     bool operator==(const ApplicationConfig&) const = default;
 };
@@ -113,6 +123,7 @@ struct LaunchItem {
     bool runAsAdministrator{false};
     std::uint64_t launchCount{};
     std::optional<std::string> lastLaunchedAt{};
+    std::optional<std::uint32_t> gridSlot{};
 
     bool operator==(const LaunchItem&) const = default;
 };

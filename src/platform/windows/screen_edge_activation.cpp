@@ -20,8 +20,9 @@ BOOL CALLBACK collectMonitor(
     const HMONITOR monitor,
     HDC,
     RECT*,
-    const LPARAM data)
+    const LPARAM data) noexcept
 {
+    try {
     auto* monitors = reinterpret_cast<std::vector<activation::MonitorGeometry>*>(data); // NOLINT(performance-no-int-to-ptr): EnumDisplayMonitors carries caller context in LPARAM.
     MONITORINFO info{};
     info.cbSize = sizeof(MONITORINFO);
@@ -40,6 +41,7 @@ BOOL CALLBACK collectMonitor(
         dpiX,
     });
     return TRUE;
+    } catch (...) { return FALSE; }
 }
 
 std::vector<activation::MonitorGeometry> enumerateMonitors()
@@ -59,10 +61,10 @@ bool approximatelyEqual(const int left, const int right) noexcept
 }
 
 bool isFullscreenWindowOnMonitor(
+    const HWND foreground,
     const HWND launcherWindow,
     const activation::ScreenRectangle& monitor) noexcept
 {
-    const HWND foreground = GetForegroundWindow();
     if (!foreground || foreground == launcherWindow || foreground == GetShellWindow()
         || foreground == GetDesktopWindow() || !IsWindowVisible(foreground)
         || IsIconic(foreground)) {
@@ -118,6 +120,9 @@ bool ScreenEdgeActivation::start(
         activationWindow_ = targets.activationWindow;
         launcherWindow_ = targets.launcherWindow;
         config_ = config;
+        foregroundProcessFilter_ = ForegroundProcessFilter{config};
+        cachedForegroundWindow_ = nullptr;
+        cachedForegroundSuppressed_ = false;
         monitors_ = std::move(monitors);
         state_ = activation::EdgeDwellStateMachine{{config.dwellMs, config.cooldownMs}};
     }
@@ -144,6 +149,9 @@ void ScreenEdgeActivation::stop() noexcept
     const std::scoped_lock lock{mutex_};
     activationWindow_ = nullptr;
     launcherWindow_ = nullptr;
+    foregroundProcessFilter_ = ForegroundProcessFilter{};
+    cachedForegroundWindow_ = nullptr;
+    cachedForegroundSuppressed_ = false;
     monitors_.clear();
     pendingActivation_.reset();
     state_.reset();
@@ -171,7 +179,7 @@ std::optional<activation::ScreenEdgeHit> ScreenEdgeActivation::takePendingActiva
 void CALLBACK ScreenEdgeActivation::timerCallback(
     PTP_CALLBACK_INSTANCE,
     void* const context,
-    PTP_TIMER)
+    PTP_TIMER) noexcept
 {
     static_cast<ScreenEdgeActivation*>(context)->sample();
 }
@@ -188,8 +196,32 @@ void ScreenEdgeActivation::sample() noexcept
         activation::ScreenPoint{cursor.x, cursor.y},
         monitors_,
         config_);
-    const bool suppressed = config_.disableOnFullscreen && hit
-        && isFullscreenWindowOnMonitor(launcherWindow_, hit->monitor);
+    const HWND foreground = hit ? GetForegroundWindow() : nullptr;
+    if (hit && foregroundProcessFilter_.active() && foreground != cachedForegroundWindow_) {
+        cachedForegroundWindow_ = foreground;
+        if (!foreground || foreground == launcherWindow_ || foreground == GetShellWindow()
+            || foreground == GetDesktopWindow()) {
+            cachedForegroundSuppressed_ = false;
+        }
+        else {
+            DWORD foregroundProcessId{};
+            GetWindowThreadProcessId(foreground, &foregroundProcessId);
+            if (foregroundProcessId == GetCurrentProcessId()) {
+                cachedForegroundSuppressed_ = false;
+            }
+            else {
+                const auto executableName = executableNameForWindow(foreground);
+                cachedForegroundSuppressed_ = foregroundProcessFilter_.suppresses(
+                    executableName
+                        ? std::optional<std::wstring_view>{*executableName}
+                        : std::nullopt);
+            }
+        }
+    }
+    const bool suppressed = hit
+        && (cachedForegroundSuppressed_
+            || (config_.disableOnFullscreen
+                && isFullscreenWindowOnMonitor(foreground, launcherWindow_, hit->monitor)));
     auto trigger = state_.update(hit, suppressed, GetTickCount64());
     if (!trigger || pendingActivation_) {
         return;

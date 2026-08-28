@@ -10,7 +10,6 @@ namespace hlaunch::infrastructure::filesystem {
 struct DataPathOptions {
     std::filesystem::path executablePath{};
     std::optional<std::filesystem::path> localAppDataOverride{};
-    bool forcePortable{};
 };
 
 struct DataPaths {
@@ -18,6 +17,7 @@ struct DataPaths {
     std::filesystem::path configFile{};
     std::filesystem::path itemsFile{};
     std::filesystem::path logDirectory{};
+    std::filesystem::path iconCacheDirectory{};
     bool portable{};
 
     bool operator==(const DataPaths&) const = default;

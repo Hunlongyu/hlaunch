@@ -49,6 +49,8 @@ add_library(
     STATIC
         infrastructure/filesystem/atomic_file.cpp
         infrastructure/filesystem/atomic_file.h
+        infrastructure/filesystem/config_save_worker.cpp
+        infrastructure/filesystem/config_save_worker.h
         infrastructure/filesystem/data_paths.cpp
         infrastructure/filesystem/data_paths.h
         infrastructure/filesystem/data_store.cpp
@@ -118,6 +120,7 @@ target_link_libraries(
 add_library(
     hlaunch_platform_windows
     STATIC
+        app_version.h
         platform/windows/activation_command.h
         platform/windows/app_identity.cpp
         platform/windows/app_identity.h
@@ -125,12 +128,18 @@ add_library(
         platform/windows/drop_item_resolver.h
         platform/windows/drop_target.cpp
         platform/windows/drop_target.h
+        platform/windows/foreground_process_filter.cpp
+        platform/windows/foreground_process_filter.h
         platform/windows/global_hotkey.cpp
         platform/windows/global_hotkey.h
+        platform/windows/icon_disk_cache.cpp
+        platform/windows/icon_disk_cache.h
         platform/windows/icon_loader.cpp
         platform/windows/icon_loader.h
         platform/windows/icon_pixel_converter.cpp
         platform/windows/icon_pixel_converter.h
+        platform/windows/item_path_policy.cpp
+        platform/windows/item_path_policy.h
         platform/windows/shell_icon_extractor.cpp
         platform/windows/shell_icon_extractor.h
         platform/windows/screen_edge_activation.cpp
@@ -143,6 +152,8 @@ add_library(
         platform/windows/single_instance.h
         platform/windows/startup_registration.cpp
         platform/windows/startup_registration.h
+        platform/windows/svg_icon_renderer.cpp
+        platform/windows/svg_icon_renderer.h
         platform/windows/tray_icon.cpp
         platform/windows/tray_icon.h
         platform/windows/uuid.cpp
@@ -165,7 +176,10 @@ target_link_libraries(
     PRIVATE
         HLaunch::ProjectOptions
         advapi32
+        d2d1
+        d3d11
         dwmapi
+        dxgi
         ole32
         runtimeobject
         shcore
@@ -178,10 +192,14 @@ target_link_libraries(
 add_library(
     hlaunch_ui
     STATIC
+        ui/clipboard.cpp
+        ui/clipboard.h
         ui/launcher_layout.cpp
         ui/launcher_layout.h
         ui/launcher_context_menu.cpp
         ui/launcher_context_menu.h
+        ui/launcher_accessibility.cpp
+        ui/launcher_accessibility.h
         ui/item_context_menu.cpp
         ui/item_context_menu.h
         ui/launcher_window.cpp
@@ -190,6 +208,7 @@ add_library(
         ui/item_editor_dialog.h
         ui/search_window.cpp
         ui/search_window.h
+        ui/dpi_layout.h
         ui/settings_window.cpp
         ui/settings_window.h
         ui/system_appearance.cpp
@@ -199,8 +218,8 @@ add_library(
         ui/native_dialog_template.h
         ui/text_prompt_dialog.cpp
         ui/text_prompt_dialog.h
-        ui/theme.cpp
-        ui/theme.h
+        ui/visual_style.cpp
+        ui/visual_style.h
 )
 add_library(HLaunch::UI ALIAS hlaunch_ui)
 
@@ -208,6 +227,8 @@ target_include_directories(
     hlaunch_ui
     PUBLIC
         "${PROJECT_SOURCE_DIR}/src"
+    PRIVATE
+        "${PROJECT_SOURCE_DIR}/resources/windows"
 )
 target_link_libraries(
     hlaunch_ui
@@ -218,6 +239,8 @@ target_link_libraries(
     PRIVATE
         HLaunch::Dependencies
         HLaunch::ProjectOptions
+        comctl32
+        comdlg32
         d2d1
         dwmapi
         dwrite
@@ -226,6 +249,7 @@ target_link_libraries(
         shlwapi
         user32
         uxtheme
+        uiautomationcore
 )
 
 add_library(
@@ -249,13 +273,27 @@ target_link_libraries(
         HLaunch::ProjectOptions
 )
 
+set(hlaunch_generated_resource_directory "${CMAKE_CURRENT_BINARY_DIR}/generated/windows")
+file(MAKE_DIRECTORY "${hlaunch_generated_resource_directory}")
+configure_file(
+    "${PROJECT_SOURCE_DIR}/resources/windows/HLaunch.rc"
+    "${hlaunch_generated_resource_directory}/HLaunch.rc"
+    @ONLY
+)
+configure_file(
+    "${PROJECT_SOURCE_DIR}/resources/windows/HLaunch.manifest"
+    "${hlaunch_generated_resource_directory}/HLaunch.manifest"
+    @ONLY
+)
+
 add_executable(
     hlaunch
     WIN32
         app/application.cpp
         app/application.h
         app/main.cpp
-        "${PROJECT_SOURCE_DIR}/resources/windows/HLaunch.manifest"
+        "${hlaunch_generated_resource_directory}/HLaunch.rc"
+        "${hlaunch_generated_resource_directory}/HLaunch.manifest"
 )
 set_target_properties(hlaunch PROPERTIES OUTPUT_NAME HLaunch)
 
@@ -263,6 +301,7 @@ target_include_directories(
     hlaunch
     PRIVATE
         "${PROJECT_SOURCE_DIR}/src"
+        "${PROJECT_SOURCE_DIR}/resources/windows"
 )
 target_link_libraries(
     hlaunch

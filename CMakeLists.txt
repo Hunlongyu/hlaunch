@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.28)
 
 project(
     HLaunch
-    VERSION 0.1.0
+    VERSION 0.1.4
     DESCRIPTION "Lightweight native Windows grid launcher"
     LANGUAGES CXX
 )
@@ -42,6 +42,7 @@ target_compile_features(hlaunch_project_options INTERFACE cxx_std_23)
 target_compile_definitions(
     hlaunch_project_options
     INTERFACE
+        HLAUNCH_VERSION_STRING="${PROJECT_VERSION}"
         NOMINMAX
         UNICODE
         _UNICODE

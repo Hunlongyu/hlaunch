@@ -1,12 +1,17 @@
 #include "platform/windows/shell_icon_extractor.h"
 
+#include "platform/windows/svg_icon_renderer.h"
+
 #include <Windows.h>
 #include <Shellapi.h>
+#include <Shobjidl.h>
 #include <wil/resource.h>
+#include <winrt/base.h>
 
 #include <algorithm>
 #include <cwctype>
 #include <filesystem>
+#include <limits>
 #include <string>
 #include <string_view>
 
@@ -42,31 +47,74 @@ std::wstring lowerExtension(const std::wstring &path)
     return extension;
 }
 
-wil::unique_hicon extractExplicitIcon(const std::wstring &path,
-                                      const std::uint32_t pixelSize)
+std::optional<IconPixels> extractExplicitIconPixels(
+    const std::wstring& path,
+    const std::uint32_t pixelSize)
 {
-    if (path.empty())
-    {
-        return {};
+    if (path.empty()) {
+        return std::nullopt;
     }
-    if (lowerExtension(path) == L".ico")
-    {
-        return wil::unique_hicon{static_cast<HICON>(LoadImageW(
-            nullptr, path.c_str(), IMAGE_ICON, static_cast<int>(pixelSize),
-            static_cast<int>(pixelSize), LR_LOADFROMFILE))};
+    const auto extension = lowerExtension(path);
+    if (extension == L".svg") {
+        return decodeSvgFileToPixels(path, pixelSize);
+    }
+    if (extension == L".ico" || extension == L".png") {
+        if (auto pixels = decodeImageFileToPixels(path, pixelSize)) {
+            return pixels;
+        }
     }
 
-    HICON large{};
-    HICON small{};
-    if (ExtractIconExW(path.c_str(), 0, &large, &small, 1) == 0)
-    {
-        return {};
+    HICON extracted{};
+    UINT resourceId{};
+    const auto count = PrivateExtractIconsW(
+        path.c_str(),
+        0,
+        static_cast<int>(pixelSize),
+        static_cast<int>(pixelSize),
+        &extracted,
+        &resourceId,
+        1,
+        LR_DEFAULTCOLOR);
+    wil::unique_hicon icon{extracted};
+    if (count == 0U || count == std::numeric_limits<UINT>::max() || !icon) {
+        return std::nullopt;
     }
-    if (small)
-    {
-        DestroyIcon(small);
+    return convertIconToPixels(icon.get(), pixelSize);
+}
+
+std::optional<IconPixels> extractShellItemPixels(
+    const std::wstring& target,
+    const std::uint32_t pixelSize)
+{
+    if (target.empty()) {
+        return std::nullopt;
     }
-    return wil::unique_hicon{large};
+    const auto apartmentResult = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const auto apartmentCleanup = wil::scope_exit([apartmentResult] {
+        if (SUCCEEDED(apartmentResult)) {
+            CoUninitialize();
+        }
+    });
+    if (FAILED(apartmentResult) && apartmentResult != RPC_E_CHANGED_MODE) {
+        return std::nullopt;
+    }
+    winrt::com_ptr<IShellItemImageFactory> factory{};
+    if (FAILED(SHCreateItemFromParsingName(
+        target.c_str(), nullptr, IID_PPV_ARGS(factory.put())))) {
+        return std::nullopt;
+    }
+    wil::unique_hbitmap bitmap{};
+    const SIZE requested{
+        static_cast<LONG>(pixelSize),
+        static_cast<LONG>(pixelSize),
+    };
+    if (FAILED(factory->GetImage(
+        requested,
+        SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK,
+        bitmap.put()))) {
+        return std::nullopt;
+    }
+    return convertBitmapToPixels(bitmap.get(), pixelSize);
 }
 
 wil::unique_hicon extractTargetIcon(const std::wstring &target)
@@ -97,22 +145,25 @@ std::optional<IconPixels>
 extractShellIconPixels(const std::string &target, const std::optional<std::string> &iconPath,
                        const std::uint32_t pixelSize)
 {
-    wil::unique_hicon icon{};
     if (iconPath)
     {
         if (const auto path = utf8ToWide(*iconPath))
         {
-            icon = extractExplicitIcon(*path, pixelSize);
+            if (auto pixels = extractExplicitIconPixels(*path, pixelSize)) {
+                return pixels;
+            }
         }
     }
-    if (!icon)
+    if (const auto path = utf8ToWide(target))
     {
-        if (const auto path = utf8ToWide(target))
-        {
-            icon = extractTargetIcon(*path);
+        if (auto pixels = extractShellItemPixels(*path, pixelSize)) {
+            return pixels;
+        }
+        if (auto icon = extractTargetIcon(*path)) {
+            return convertIconToPixels(icon.get(), pixelSize);
         }
     }
-    return icon ? convertIconToPixels(icon.get(), pixelSize) : std::nullopt;
+    return std::nullopt;
 }
 
 } // namespace hlaunch::platform::windows

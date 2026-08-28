@@ -43,17 +43,34 @@
         "id": { "$ref": "#/$defs/uuid" },
         "type": { "enum": ["application", "file", "folder", "url", "shortcut"] },
         "name": { "type": "string", "minLength": 1, "maxLength": 256 },
-        "target": { "type": "string", "minLength": 1, "maxLength": 32768 },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32768,
+          "description": "URL targets stay unchanged. File-system targets may be absolute, environment-variable based, or relative to the HLaunch executable directory."
+        },
         "arguments": {
           "type": "array",
           "maxItems": 256,
           "items": { "type": "string", "maxLength": 32768 }
         },
-        "workingDirectory": { "$ref": "#/$defs/nullableString" },
-        "icon": { "$ref": "#/$defs/nullableString" },
+        "workingDirectory": {
+          "$ref": "#/$defs/nullableString",
+          "description": "A file-system path; ordinary relative values resolve against the HLaunch executable directory."
+        },
+        "icon": {
+          "$ref": "#/$defs/nullableString",
+          "description": "A file-system path; ordinary relative values resolve against the HLaunch executable directory."
+        },
         "runAsAdministrator": { "type": "boolean" },
         "launchCount": { "type": "integer", "minimum": 0 },
-        "lastLaunchedAt": { "type": ["string", "null"], "format": "date-time" }
+        "lastLaunchedAt": { "type": ["string", "null"], "format": "date-time" },
+        "gridSlot": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 9999,
+          "description": "Stable zero-based Grid slot. Missing legacy values are assigned in array order."
+        }
       },
       "additionalProperties": true
     }

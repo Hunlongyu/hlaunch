@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 
 #include "activation/screen_edge_state.h"
+#include "platform/windows/foreground_process_filter.h"
 #include "ui/launcher_layout.h"
 
 #include <doctest/doctest.h>
@@ -191,4 +192,29 @@ TEST_CASE("ACT-EDGE-001 edge placement anchors and constrains the launcher")
     CHECK(oversized.top == 50);
     CHECK(oversized.right == 400);
     CHECK(oversized.bottom == 250);
+}
+
+TEST_CASE("ACT-EDGE-001 foreground process allowlist overrides blocklist")
+{
+    auto config = hlaunch::core::ScreenEdgeConfig{};
+    config.foregroundProcessBlocklist = {"game.exe", "mstsc.exe"};
+    config.foregroundProcessAllowlist = {"mstsc.exe"};
+    const hlaunch::platform::windows::ForegroundProcessFilter filter{config};
+
+    CHECK(filter.active());
+    CHECK(filter.suppresses(std::wstring_view{L"GAME.EXE"}));
+    CHECK_FALSE(filter.suppresses(std::wstring_view{L"Mstsc.exe"}));
+    CHECK(filter.suppresses(std::wstring_view{L"explorer.exe"}));
+    CHECK(filter.suppresses(std::nullopt));
+}
+
+TEST_CASE("ACT-EDGE-001 blocklist fails open when process lookup is unavailable")
+{
+    auto config = hlaunch::core::ScreenEdgeConfig{};
+    config.foregroundProcessBlocklist = {"game.exe"};
+    const hlaunch::platform::windows::ForegroundProcessFilter filter{config};
+
+    CHECK(filter.suppresses(std::wstring_view{L"Game.exe"}));
+    CHECK_FALSE(filter.suppresses(std::wstring_view{L"explorer.exe"}));
+    CHECK_FALSE(filter.suppresses(std::nullopt));
 }

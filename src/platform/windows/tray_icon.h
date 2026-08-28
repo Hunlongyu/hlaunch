@@ -1,14 +1,22 @@
 #pragma once
 
+#include "app_version.h"
+
 #include <Windows.h>
 #include <shellapi.h>
 
 #include <cstdint>
 #include <optional>
+#include <string_view>
 
 namespace hlaunch::platform::windows {
 
 inline constexpr UINT trayIconCallbackMessage = WM_APP + 0x20;
+
+[[nodiscard]] constexpr std::wstring_view trayIconTooltipText() noexcept
+{
+    return L"HLaunch\nv" HLAUNCH_VERSION_WIDE_LITERAL;
+}
 
 enum class TrayCommand : std::uint8_t {
     ToggleLauncher,

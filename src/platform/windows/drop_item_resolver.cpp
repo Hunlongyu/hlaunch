@@ -154,7 +154,10 @@ std::optional<core::LaunchItem> resolveUrl(const std::wstring &value)
 
 DropImportResult resolveDroppedSources(const DropImportRequest &request)
 {
-    DropImportResult result{.targetTabIndex = request.targetTabIndex};
+    DropImportResult result{
+        .targetTabIndex = request.targetTabIndex,
+        .targetGridSlot = request.targetGridSlot,
+    };
     result.items.reserve(request.sources.size());
     for (const auto &source : request.sources)
     {
@@ -168,6 +171,28 @@ DropImportResult resolveDroppedSources(const DropImportRequest &request)
         result.items.push_back(std::move(*item));
     }
     return result;
+}
+
+std::optional<core::LaunchItem> makeDropLaunchItem(
+    core::LaunchItem item,
+    const std::vector<DroppedSource>& sources)
+{
+    bool appendedPath{};
+    for (const auto& source : sources)
+    {
+        if (source.kind != DroppedSourceKind::Path)
+        {
+            continue;
+        }
+        const auto argument = wideToUtf8(source.value);
+        if (!argument || argument->empty())
+        {
+            return std::nullopt;
+        }
+        item.arguments.push_back(std::move(*argument));
+        appendedPath = true;
+    }
+    return appendedPath ? std::optional<core::LaunchItem>{std::move(item)} : std::nullopt;
 }
 
 DropItemResolver::DropItemResolver(CompletionHandler completionHandler)
@@ -226,6 +251,7 @@ void DropItemResolver::run()
         catch (...)
         {
             result.targetTabIndex = request.targetTabIndex;
+            result.targetGridSlot = request.targetGridSlot;
             result.unsupportedCount = request.sources.size();
             result.failed = true;
         }

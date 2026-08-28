@@ -1,6 +1,7 @@
 #include "infrastructure/json/data_json_codec.h"
 
 #include "core/data_validation.h"
+#include "core/item_operations.h"
 
 #include <glaze/glaze.hpp>
 
@@ -38,6 +39,8 @@ struct ScreenEdgeDto {
     std::int64_t pollMs{};
     std::int64_t cooldownMs{};
     bool disableOnFullscreen{};
+    std::vector<std::string> foregroundProcessBlocklist{};
+    std::vector<std::string> foregroundProcessAllowlist{};
 };
 
 struct ActivationDto {
@@ -46,33 +49,38 @@ struct ActivationDto {
 };
 
 struct AppearanceDto {
-    std::string theme{};
     std::optional<std::string> backdrop{};
     std::optional<std::int64_t> opacityPercent{};
+    std::optional<std::int64_t> gridColumns{};
+    std::optional<std::int64_t> gridRows{};
+};
+
+struct DiagnosticsDto {
+    std::optional<bool> loggingEnabled{};
 };
 
 struct ConfigDto {
     std::int64_t schemaVersion{};
     AppearanceDto appearance{};
     ActivationDto activation{};
-};
-
-struct LegacyConfigDto {
-    std::int64_t schemaVersion{};
-    ActivationDto activation{};
-};
-
-struct LegacyAppearanceDto {
-    std::string theme{};
-};
-
-struct LegacyAppearanceConfigDto {
-    std::int64_t schemaVersion{};
-    LegacyAppearanceDto appearance{};
-    ActivationDto activation{};
+    DiagnosticsDto diagnostics{};
 };
 
 struct ItemDto {
+    std::string id{};
+    std::string type{};
+    std::string name{};
+    std::string target{};
+    std::vector<std::string> arguments{};
+    std::optional<std::string> workingDirectory{};
+    std::optional<std::string> icon{};
+    bool runAsAdministrator{};
+    std::uint64_t launchCount{};
+    std::optional<std::string> lastLaunchedAt{};
+    std::optional<std::int64_t> gridSlot{};
+};
+
+struct ItemWithoutGridSlotDto {
     std::string id{};
     std::string type{};
     std::string name{};
@@ -113,7 +121,7 @@ constexpr glz::opts makeReadOptions()
     options.error_on_unknown_keys = false;
     options.null_terminated = false;
     options.skip_null_members = false;
-    options.error_on_missing_keys = true;
+    options.error_on_missing_keys = false;
     return options;
 }
 
@@ -374,18 +382,6 @@ std::optional<core::ApplicationConfig> configFromDto(
 {
     core::ApplicationConfig config{};
     config.schemaVersion = static_cast<std::uint32_t>(dto.schemaVersion);
-    if (dto.appearance.theme == "dark") {
-        config.appearance.theme = core::ThemeMode::Dark;
-    }
-    else if (dto.appearance.theme == "light") {
-        config.appearance.theme = core::ThemeMode::Light;
-    }
-    else {
-        issues.push_back(makeIssue(
-            JsonIssueCode::Validation,
-            "$.appearance.theme",
-            "theme must be dark or light"));
-    }
     const auto backdrop = dto.appearance.backdrop.value_or("acrylic");
     if (backdrop == "solid") {
         config.appearance.backdrop = core::BackdropMode::Solid;
@@ -414,6 +410,30 @@ std::optional<core::ApplicationConfig> configFromDto(
             JsonIssueCode::Validation,
             "$.appearance.opacityPercent",
             "opacityPercent must be between 30 and 100"));
+    }
+    const auto gridColumns = dto.appearance.gridColumns.value_or(
+        core::defaultLauncherGridColumns);
+    if (gridColumns >= core::minimumLauncherGridColumns
+        && gridColumns <= core::maximumLauncherGridColumns) {
+        config.appearance.gridColumns = static_cast<std::uint16_t>(gridColumns);
+    }
+    else {
+        issues.push_back(makeIssue(
+            JsonIssueCode::Validation,
+            "$.appearance.gridColumns",
+            "gridColumns must be between 3 and 20"));
+    }
+    const auto gridRows = dto.appearance.gridRows.value_or(
+        core::defaultLauncherGridRows);
+    if (gridRows >= core::minimumLauncherGridRows
+        && gridRows <= core::maximumLauncherGridRows) {
+        config.appearance.gridRows = static_cast<std::uint16_t>(gridRows);
+    }
+    else {
+        issues.push_back(makeIssue(
+            JsonIssueCode::Validation,
+            "$.appearance.gridRows",
+            "gridRows must be between 3 and 20"));
     }
     config.activation.hotkey.enabled = dto.activation.hotkey.enabled;
     config.activation.hotkey.key = dto.activation.hotkey.key;
@@ -469,6 +489,8 @@ std::optional<core::ApplicationConfig> configFromDto(
     edge.thicknessDip = dto.activation.screenEdge.thicknessDip;
     edge.cornerSizeDip = dto.activation.screenEdge.cornerSizeDip;
     edge.disableOnFullscreen = dto.activation.screenEdge.disableOnFullscreen;
+    edge.foregroundProcessBlocklist = dto.activation.screenEdge.foregroundProcessBlocklist;
+    edge.foregroundProcessAllowlist = dto.activation.screenEdge.foregroundProcessAllowlist;
 
     const auto dwell = checkedMilliseconds(
         dto.activation.screenEdge.dwellMs,
@@ -491,6 +513,7 @@ std::optional<core::ApplicationConfig> configFromDto(
     if (cooldown) {
         edge.cooldownMs = *cooldown;
     }
+    config.diagnostics.loggingEnabled = dto.diagnostics.loggingEnabled.value_or(true);
 
     appendIssues(issues, convertIssues(core::validateConfig(config)));
     if (!issues.empty()) {
@@ -504,21 +527,18 @@ ConfigDto configToDto(const core::ApplicationConfig& config)
     ConfigDto dto{};
     dto.schemaVersion = config.schemaVersion;
     dto.appearance = AppearanceDto{
-        .theme = config.appearance.theme == core::ThemeMode::Light ? "light" : "dark",
         .backdrop = [&config] {
             switch (config.appearance.backdrop) {
-            case core::BackdropMode::Solid:
-                return "solid";
-            case core::BackdropMode::Mica:
-                return "mica";
-            case core::BackdropMode::Acrylic:
-                return "acrylic";
-            case core::BackdropMode::Tabbed:
-                return "tabbed";
+            case core::BackdropMode::Solid: return "solid";
+            case core::BackdropMode::Mica: return "mica";
+            case core::BackdropMode::Acrylic: return "acrylic";
+            case core::BackdropMode::Tabbed: return "tabbed";
             }
             return "acrylic";
         }(),
         .opacityPercent = config.appearance.opacityPercent,
+        .gridColumns = config.appearance.gridColumns,
+        .gridRows = config.appearance.gridRows,
     };
     dto.activation.hotkey.enabled = config.activation.hotkey.enabled;
     for (const auto modifier : config.activation.hotkey.modifiers) {
@@ -541,6 +561,9 @@ ConfigDto configToDto(const core::ApplicationConfig& config)
     dto.activation.screenEdge.pollMs = edge.pollMs;
     dto.activation.screenEdge.cooldownMs = edge.cooldownMs;
     dto.activation.screenEdge.disableOnFullscreen = edge.disableOnFullscreen;
+    dto.activation.screenEdge.foregroundProcessBlocklist = edge.foregroundProcessBlocklist;
+    dto.activation.screenEdge.foregroundProcessAllowlist = edge.foregroundProcessAllowlist;
+    dto.diagnostics.loggingEnabled = config.diagnostics.loggingEnabled;
     return dto;
 }
 
@@ -555,6 +578,19 @@ std::optional<core::LaunchItem> itemFromDto(
         return std::nullopt;
     }
 
+    std::optional<std::uint32_t> gridSlot{};
+    if (dto.gridSlot) {
+        if (*dto.gridSlot < 0
+            || *dto.gridSlot >= static_cast<std::int64_t>(core::maximumGridSlotsPerTab)) {
+            issues.push_back(makeIssue(
+                JsonIssueCode::Validation,
+                path + ".gridSlot",
+                "gridSlot must be between 0 and 9999"));
+            return std::nullopt;
+        }
+        gridSlot = static_cast<std::uint32_t>(*dto.gridSlot);
+    }
+
     core::LaunchItem item{
         .id = dto.id,
         .type = *type,
@@ -566,6 +602,7 @@ std::optional<core::LaunchItem> itemFromDto(
         .runAsAdministrator = dto.runAsAdministrator,
         .launchCount = dto.launchCount,
         .lastLaunchedAt = dto.lastLaunchedAt,
+        .gridSlot = gridSlot,
     };
     auto itemIssues = convertIssues(core::validateItem(item, path));
     if (!itemIssues.empty()) {
@@ -588,6 +625,9 @@ ItemDto itemToDto(const core::LaunchItem& item)
         .runAsAdministrator = item.runAsAdministrator,
         .launchCount = item.launchCount,
         .lastLaunchedAt = item.lastLaunchedAt,
+        .gridSlot = item.gridSlot
+            ? std::optional<std::int64_t>{static_cast<std::int64_t>(*item.gridSlot)}
+            : std::nullopt,
     };
 }
 
@@ -640,38 +680,8 @@ ConfigDecodeResult decodeConfig(const std::string_view input)
 
     ConfigDto dto{};
     if (const auto issue = parseDto(dto, input, "$")) {
-        if (input.find("\"appearance\"") != std::string_view::npos) {
-            LegacyAppearanceConfigDto legacyAppearance{};
-            if (parseDto(legacyAppearance, input, "$")) {
-                result.issues.push_back(*issue);
-                return result;
-            }
-            dto = ConfigDto{
-                .schemaVersion = legacyAppearance.schemaVersion,
-                .appearance = AppearanceDto{
-                    .theme = std::move(legacyAppearance.appearance.theme),
-                    .backdrop = "acrylic",
-                    .opacityPercent = 95,
-                },
-                .activation = std::move(legacyAppearance.activation),
-            };
-        }
-        else {
-            LegacyConfigDto legacy{};
-            if (parseDto(legacy, input, "$")) {
-                result.issues.push_back(*issue);
-                return result;
-            }
-            dto = ConfigDto{
-                .schemaVersion = legacy.schemaVersion,
-                .appearance = AppearanceDto{
-                    .theme = "dark",
-                    .backdrop = "acrylic",
-                    .opacityPercent = 95,
-                },
-                .activation = std::move(legacy.activation),
-            };
-        }
+        result.issues.push_back(*issue);
+        return result;
     }
     if (!checkSchema(dto.schemaVersion, result)) {
         return result;
@@ -729,6 +739,7 @@ ItemsDecodeResult decodeItems(const std::string_view input)
         }
 
         tab.items.reserve(tabDto.items.size());
+        std::unordered_set<std::uint32_t> gridSlots{};
         for (std::size_t itemIndex = 0; itemIndex < tabDto.items.size(); ++itemIndex) {
             const auto itemPath = tabPath + ".items[" + std::to_string(itemIndex) + "]";
             if (acceptedItemCount >= maxTotalItemCount) {
@@ -741,8 +752,23 @@ ItemsDecodeResult decodeItems(const std::string_view input)
 
             ItemDto itemDto{};
             if (const auto issue = parseDto(itemDto, tabDto.items[itemIndex].str, itemPath)) {
-                result.issues.push_back(*issue);
-                continue;
+                ItemWithoutGridSlotDto legacyItem{};
+                if (parseDto(legacyItem, tabDto.items[itemIndex].str, itemPath)) {
+                    result.issues.push_back(*issue);
+                    continue;
+                }
+                itemDto = ItemDto{
+                    .id = std::move(legacyItem.id),
+                    .type = std::move(legacyItem.type),
+                    .name = std::move(legacyItem.name),
+                    .target = std::move(legacyItem.target),
+                    .arguments = std::move(legacyItem.arguments),
+                    .workingDirectory = std::move(legacyItem.workingDirectory),
+                    .icon = std::move(legacyItem.icon),
+                    .runAsAdministrator = legacyItem.runAsAdministrator,
+                    .launchCount = legacyItem.launchCount,
+                    .lastLaunchedAt = std::move(legacyItem.lastLaunchedAt),
+                };
             }
             auto item = itemFromDto(itemDto, itemPath, result.issues);
             if (!item) {
@@ -755,9 +781,17 @@ ItemsDecodeResult decodeItems(const std::string_view input)
                     "duplicate item id; item was ignored"));
                 continue;
             }
+            if (item->gridSlot && !gridSlots.insert(*item->gridSlot).second) {
+                result.issues.push_back(makeIssue(
+                    JsonIssueCode::Validation,
+                    itemPath + ".gridSlot",
+                    "duplicate gridSlot was reassigned"));
+                item->gridSlot.reset();
+            }
             tab.items.push_back(std::move(*item));
             ++acceptedItemCount;
         }
+        core::normalizeGridSlots(tab);
         document.tabs.push_back(std::move(tab));
     }
 
@@ -776,11 +810,13 @@ JsonEncodeResult encodeConfig(const core::ApplicationConfig& config)
 
 JsonEncodeResult encodeItems(const core::ItemsDocument& document)
 {
-    auto issues = convertIssues(core::validateItemsDocument(document));
+    auto normalized = document;
+    core::normalizeGridSlots(normalized);
+    auto issues = convertIssues(core::validateItemsDocument(normalized));
     if (!issues.empty()) {
         return std::unexpected(std::move(issues));
     }
-    return encodeDto(itemsToDto(document));
+    return encodeDto(itemsToDto(normalized));
 }
 
 } // namespace hlaunch::infrastructure::json

@@ -93,6 +93,11 @@ target_link_libraries(
         HLaunch::ProjectOptions
         doctest::doctest
 )
+target_compile_definitions(
+    hlaunch_icon_loader_tests
+    PRIVATE
+        HLAUNCH_TEST_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+)
 
 add_test(NAME UI-ICON-001.extract-and-cache COMMAND hlaunch_icon_loader_tests)
 

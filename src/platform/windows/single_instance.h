@@ -18,6 +18,22 @@ struct InstanceError {
     std::string message{};
 };
 
+enum class PrimaryNotificationErrorCode {
+    WindowNotFound,
+    DeliveryFailed,
+};
+
+struct PrimaryNotificationError {
+    PrimaryNotificationErrorCode code{PrimaryNotificationErrorCode::WindowNotFound};
+    unsigned long systemCode{};
+};
+
+struct PrimaryNotificationOptions {
+    unsigned int findAttempts{20U};
+    unsigned long retryDelayMilliseconds{50U};
+    unsigned long sendTimeoutMilliseconds{1'000U};
+};
+
 class SingleInstance final {
 public:
     [[nodiscard]] static std::expected<SingleInstance, InstanceError> acquire();
@@ -37,6 +53,8 @@ private:
 };
 
 [[nodiscard]] UINT activationMessageId() noexcept;
-[[nodiscard]] bool notifyPrimaryInstance(ActivationCommand command) noexcept;
+[[nodiscard]] std::expected<void, PrimaryNotificationError> notifyPrimaryInstance(
+    ActivationCommand command,
+    const PrimaryNotificationOptions& options = {}) noexcept;
 
 } // namespace hlaunch::platform::windows

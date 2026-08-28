@@ -34,10 +34,11 @@ bool TrayIcon::start(const HWND owner, const HICON icon)
     data_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
     data_.uCallbackMessage = trayIconCallbackMessage;
     data_.hIcon = icon;
-    constexpr wchar_t tooltip[] = L"HLaunch";
+    constexpr auto tooltip = trayIconTooltipText();
     static_assert(
-        std::size(tooltip) <= sizeof(NOTIFYICONDATAW::szTip) / sizeof(wchar_t));
+        tooltip.size() < sizeof(NOTIFYICONDATAW::szTip) / sizeof(wchar_t));
     std::ranges::copy(tooltip, data_.szTip);
+    data_.szTip[tooltip.size()] = L'\0';
     return add();
 }
 

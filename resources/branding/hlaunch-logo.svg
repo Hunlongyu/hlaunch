@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 512 512"
+     role="img"
+     aria-labelledby="title description"
+     shape-rendering="geometricPrecision">
+  <title id="title">HLaunch logo</title>
+  <desc id="description">A bold H monogram whose right stem rises into a launch arrow.</desc>
+
+  <defs>
+    <linearGradient id="badge" x1="118" y1="108" x2="392" y2="404" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22D3C5"/>
+      <stop offset="0.42" stop-color="#0798F2"/>
+      <stop offset="0.69" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#D946EF"/>
+    </linearGradient>
+    <radialGradient id="depth" cx="0" cy="1" r="0.86">
+      <stop offset="0" stop-color="#06144F" stop-opacity="0.98"/>
+      <stop offset="0.46" stop-color="#06144F" stop-opacity="0.52"/>
+      <stop offset="1" stop-color="#06144F" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glyph" x1="198" y1="150" x2="318" y2="356" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#D7E7FF"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="99" y="98" width="314" height="314" rx="60" ry="60" fill="url(#badge)"/>
+  <rect x="99" y="98" width="314" height="314" rx="60" ry="60" fill="url(#depth)"/>
+
+  <g fill="url(#glyph)">
+    <rect x="160" y="169" width="51" height="187" rx="10"/>
+    <rect x="198" y="239" width="108" height="45" rx="8"/>
+    <path d="M319 137c3 0 6 2 8 5l35 50c4 6 0 10-7 10h-11v144c0 6-5 10-11 10h-28c-6 0-11-4-11-10V202h-11c-7 0-11-4-7-10l35-50c2-3 5-5 8-5Z"/>
+  </g>
+</svg>

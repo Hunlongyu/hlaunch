@@ -1,8 +1,10 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 
 #include "core/data_model.h"
+#include "core/item_operations.h"
 #include "core/data_validation.h"
 #include "infrastructure/filesystem/atomic_file.h"
+#include "infrastructure/filesystem/config_save_worker.h"
 #include "infrastructure/filesystem/data_paths.h"
 #include "infrastructure/filesystem/data_store.h"
 #include "infrastructure/filesystem/items_save_worker.h"
@@ -55,50 +57,97 @@ private:
 
 } // namespace
 
-TEST_CASE("DATA-CONFIG-001 resolves standard and forced portable data roots")
+TEST_CASE("DATA-CONFIG-001 defaults to a writable data root beside the executable")
 {
     TemporaryDirectory temporary{};
     const auto executable = temporary.path() / L"app" / L"HLaunch.exe";
     const auto localAppData = temporary.path() / L"local";
     std::filesystem::create_directories(executable.parent_path());
 
-    const auto standard = hlaunch::infrastructure::filesystem::resolveDataPaths({
-        .executablePath = executable,
-        .localAppDataOverride = localAppData,
-    });
-    REQUIRE(standard.has_value());
-    CHECK_FALSE(standard->portable);
-    CHECK(standard->root == localAppData / L"HLaunch");
-    CHECK(standard->configFile == standard->root / L"config.json");
-    CHECK(standard->logDirectory == standard->root / L"logs");
-
-    const auto portable = hlaunch::infrastructure::filesystem::resolveDataPaths({
-        .executablePath = executable,
-        .localAppDataOverride = localAppData,
-        .forcePortable = true,
-    });
-    REQUIRE(portable.has_value());
-    CHECK(portable->portable);
-    CHECK(portable->root == executable.parent_path() / L"data");
-    CHECK(portable->logDirectory == portable->root / L"logs");
-}
-
-TEST_CASE("DATA-CONFIG-001 portable.flag selects the portable data root")
-{
-    TemporaryDirectory temporary{};
-    const auto executable = temporary.path() / L"app" / L"HLaunch.exe";
-    std::filesystem::create_directories(executable.parent_path());
-    std::ofstream flag{executable.parent_path() / L"portable.flag"};
-    REQUIRE(flag.good());
-    flag.close();
-
     const auto paths = hlaunch::infrastructure::filesystem::resolveDataPaths({
         .executablePath = executable,
-        .localAppDataOverride = temporary.path() / L"local",
+        .localAppDataOverride = localAppData,
     });
     REQUIRE(paths.has_value());
     CHECK(paths->portable);
     CHECK(paths->root == executable.parent_path() / L"data");
+    CHECK(paths->configFile == paths->root / L"config.json");
+    CHECK(paths->logDirectory == paths->root / L"logs");
+    CHECK(paths->iconCacheDirectory == paths->root / L"cache" / L"icons");
+    CHECK(std::filesystem::is_directory(paths->root));
+}
+
+TEST_CASE("DATA-CONFIG-001 falls back to LocalAppData when portable data is unavailable")
+{
+    TemporaryDirectory temporary{};
+    const auto executable = temporary.path() / L"app" / L"HLaunch.exe";
+    const auto localAppData = temporary.path() / L"local";
+    std::filesystem::create_directories(executable.parent_path());
+    std::ofstream blocker{executable.parent_path() / L"data"};
+    REQUIRE(blocker.good());
+    blocker.close();
+
+    const auto paths = hlaunch::infrastructure::filesystem::resolveDataPaths({
+        .executablePath = executable,
+        .localAppDataOverride = localAppData,
+    });
+    REQUIRE(paths.has_value());
+    CHECK_FALSE(paths->portable);
+    CHECK(paths->root == localAppData / L"HLaunch");
+    CHECK(std::filesystem::is_directory(paths->root));
+}
+
+TEST_CASE("DATA-CONFIG-001 falls back when an existing portable data file is locked")
+{
+    TemporaryDirectory temporary{};
+    const auto executable = temporary.path() / L"app" / L"HLaunch.exe";
+    const auto portableRoot = executable.parent_path() / L"data";
+    const auto localAppData = temporary.path() / L"local";
+    std::filesystem::create_directories(portableRoot);
+    std::ofstream config{portableRoot / L"config.json"};
+    REQUIRE(config.good());
+    config << "{}";
+    config.close();
+
+    const auto lockedConfig = CreateFileW(
+        (portableRoot / L"config.json").c_str(),
+        GENERIC_READ,
+        0,
+        nullptr,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr);
+    REQUIRE(lockedConfig != INVALID_HANDLE_VALUE);
+
+    const auto paths = hlaunch::infrastructure::filesystem::resolveDataPaths({
+        .executablePath = executable,
+        .localAppDataOverride = localAppData,
+    });
+    CHECK(CloseHandle(lockedConfig));
+    REQUIRE(paths.has_value());
+    CHECK_FALSE(paths->portable);
+    CHECK(paths->root == localAppData / L"HLaunch");
+}
+
+TEST_CASE("DATA-CONFIG-001 reports failure when portable and fallback roots are unavailable")
+{
+    TemporaryDirectory temporary{};
+    const auto executable = temporary.path() / L"app" / L"HLaunch.exe";
+    const auto localAppData = temporary.path() / L"local";
+    std::filesystem::create_directories(executable.parent_path());
+    std::filesystem::create_directories(localAppData);
+    std::ofstream portableBlocker{executable.parent_path() / L"data"};
+    std::ofstream fallbackBlocker{localAppData / L"HLaunch"};
+    REQUIRE(portableBlocker.good());
+    REQUIRE(fallbackBlocker.good());
+    portableBlocker.close();
+    fallbackBlocker.close();
+
+    const auto paths = hlaunch::infrastructure::filesystem::resolveDataPaths({
+        .executablePath = executable,
+        .localAppDataOverride = localAppData,
+    });
+    CHECK_FALSE(paths.has_value());
 }
 
 TEST_CASE("PROD-ITEM-001 a missing items file provides an editable default tab")
@@ -186,6 +235,63 @@ TEST_CASE("DATA-CONFIG-001 a temporary-file failure preserves the primary")
     CHECK(loaded->value->activation.hotkey.enabled);
 }
 
+TEST_CASE("DATA-CONFIG-001 queued config saves flush the latest snapshot on shutdown")
+{
+    TemporaryDirectory temporary{};
+    const auto configPath = temporary.path() / L"config.json";
+    std::atomic_uint32_t completionCount{};
+    std::atomic_uint64_t latestRevision{};
+    std::atomic_uint32_t failureCount{};
+
+    hlaunch::core::ApplicationConfig first{};
+    auto latest = first;
+    latest.appearance.gridColumns = 7U;
+    latest.activation.hotkey.enabled = false;
+
+    {
+        hlaunch::infrastructure::filesystem::ConfigSaveWorker worker{
+            configPath,
+            [&](const auto completion) {
+                ++completionCount;
+                latestRevision.store(completion.revision);
+                if (completion.error) {
+                    ++failureCount;
+                }
+            }};
+        REQUIRE(worker.submit(1U, first));
+        REQUIRE(worker.submit(2U, latest));
+    }
+
+    CHECK(completionCount.load() >= 1U);
+    CHECK(latestRevision.load() == 2U);
+    CHECK(failureCount.load() == 0U);
+    const auto loaded = hlaunch::infrastructure::filesystem::loadConfig(configPath);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->value.has_value());
+    CHECK(*loaded->value == latest);
+}
+
+TEST_CASE("DATA-CONFIG-001 background config save reports revision and failure")
+{
+    TemporaryDirectory temporary{};
+    const auto configPath = temporary.path() / L"config.json";
+    REQUIRE(std::filesystem::create_directory(
+        hlaunch::infrastructure::filesystem::temporaryPathFor(configPath)));
+    std::optional<hlaunch::infrastructure::filesystem::ConfigSaveCompletion> completion{};
+
+    {
+        hlaunch::infrastructure::filesystem::ConfigSaveWorker worker{
+            configPath,
+            [&](auto result) { completion = std::move(result); }};
+        REQUIRE(worker.submit(42U, hlaunch::core::ApplicationConfig{}));
+    }
+
+    REQUIRE(completion.has_value());
+    CHECK(completion->revision == 42U);
+    CHECK(completion->error.has_value());
+    CHECK_FALSE(std::filesystem::exists(configPath));
+}
+
 TEST_CASE("PROD-ITEM-001 queued item saves flush the latest snapshot on shutdown")
 {
     TemporaryDirectory temporary{};
@@ -218,6 +324,7 @@ TEST_CASE("PROD-ITEM-001 queued item saves flush the latest snapshot on shutdown
     const auto loaded = hlaunch::infrastructure::filesystem::loadItems(itemsPath);
     REQUIRE(loaded.has_value());
     REQUIRE(loaded->value.has_value());
+    hlaunch::core::normalizeGridSlots(latest);
     CHECK(*loaded->value == latest);
 }
 

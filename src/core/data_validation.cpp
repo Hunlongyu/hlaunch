@@ -1,9 +1,11 @@
 #include "core/data_validation.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 
@@ -126,13 +128,19 @@ std::vector<ValidationIssue> validateConfig(const ApplicationConfig& config)
         addIssue(issues, "$.schemaVersion", "schemaVersion must be 1");
     }
 
-    switch (config.appearance.theme) {
-    case ThemeMode::Dark:
-    case ThemeMode::Light:
-        break;
-    default:
-        addIssue(issues, "$.appearance.theme", "theme must be dark or light");
-        break;
+    if (config.appearance.gridColumns < minimumLauncherGridColumns
+        || config.appearance.gridColumns > maximumLauncherGridColumns) {
+        addIssue(
+            issues,
+            "$.appearance.gridColumns",
+            "gridColumns must be between 3 and 20");
+    }
+    if (config.appearance.gridRows < minimumLauncherGridRows
+        || config.appearance.gridRows > maximumLauncherGridRows) {
+        addIssue(
+            issues,
+            "$.appearance.gridRows",
+            "gridRows must be between 3 and 20");
     }
 
     switch (config.appearance.backdrop) {
@@ -188,6 +196,46 @@ std::vector<ValidationIssue> validateConfig(const ApplicationConfig& config)
     if (edge.cooldownMs > 5'000) {
         addIssue(issues, "$.activation.screenEdge.cooldownMs", "value must not exceed 5000 ms");
     }
+    const auto validateProcessList = [&issues](
+        const std::vector<std::string>& names,
+        const std::string_view field) {
+        if (names.size() > 64) {
+            addIssue(
+                issues,
+                std::string{"$.activation.screenEdge."} + std::string{field},
+                "process list must not contain more than 64 entries");
+        }
+        for (std::size_t index = 0; index < names.size(); ++index) {
+            const auto& name = names[index];
+            const auto path = std::string{"$.activation.screenEdge."} + std::string{field}
+                + "[" + std::to_string(index) + "]";
+            const auto asciiLower = [](const char character) {
+                return character >= 'A' && character <= 'Z'
+                    ? static_cast<char>(character - 'A' + 'a')
+                    : character;
+            };
+            const bool hasExeSuffix = name.size() >= 4
+                && asciiLower(name[name.size() - 4]) == '.'
+                && asciiLower(name[name.size() - 3]) == 'e'
+                && asciiLower(name[name.size() - 2]) == 'x'
+                && asciiLower(name[name.size() - 1]) == 'e';
+            const bool hasInvalidCharacter = std::ranges::any_of(name, [](const char character) {
+                const auto byte = static_cast<unsigned char>(character);
+                return byte < 0x20 || character == '\\' || character == '/'
+                    || character == ':' || character == '*' || character == '?'
+                    || character == '"' || character == '<' || character == '>'
+                    || character == '|';
+            });
+            if (name.empty() || name.size() > 260 || !hasExeSuffix || hasInvalidCharacter) {
+                addIssue(
+                    issues,
+                    path,
+                    "process entry must be an executable file name ending in .exe");
+            }
+        }
+    };
+    validateProcessList(edge.foregroundProcessBlocklist, "foregroundProcessBlocklist");
+    validateProcessList(edge.foregroundProcessAllowlist, "foregroundProcessAllowlist");
     return issues;
 }
 
@@ -224,6 +272,9 @@ std::vector<ValidationIssue> validateItem(const LaunchItem& item, const std::str
     if (item.lastLaunchedAt && !isValidUtcTimestamp(*item.lastLaunchedAt)) {
         addIssue(issues, prefix + ".lastLaunchedAt", "timestamp must be UTC RFC 3339");
     }
+    if (item.gridSlot && *item.gridSlot >= maxItemsPerTab) {
+        addIssue(issues, prefix + ".gridSlot", "gridSlot must be between 0 and 9999");
+    }
     return issues;
 }
 
@@ -240,9 +291,17 @@ std::vector<ValidationIssue> validateTab(const Tab& tab, const std::string_view 
     if (tab.items.size() > maxItemsPerTab) {
         addIssue(issues, prefix + ".items", "item count must not exceed 10000");
     }
+    std::unordered_set<std::uint32_t> gridSlots{};
     for (std::size_t index = 0; index < tab.items.size(); ++index) {
         auto itemIssues = validateItem(tab.items[index], prefix + ".items[" + std::to_string(index) + "]");
         issues.insert(issues.end(), itemIssues.begin(), itemIssues.end());
+        if (tab.items[index].gridSlot
+            && !gridSlots.insert(*tab.items[index].gridSlot).second) {
+            addIssue(
+                issues,
+                prefix + ".items[" + std::to_string(index) + "].gridSlot",
+                "gridSlot must be unique within a tab");
+        }
     }
     return issues;
 }

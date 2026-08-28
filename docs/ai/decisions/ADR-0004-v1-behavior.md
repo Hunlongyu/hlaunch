@@ -17,4 +17,4 @@
 - Settings 使用原生 Win32 Controls；Launcher 保持 Direct2D 自绘。这样可降低表单与辅助功能实现风险。
 - V1 不主动发现 Packaged App/UWP；用户已有的可启动 `.lnk` 可作为普通快捷方式导入。
 - 单实例由生命周期持有的 Named Mutex 判定。主实例创建类名固定为 `HLaunch.ActivationWindow.v1` 的隐藏顶层窗口；第二实例用 `FindWindowW` 和注册窗口消息发送小型命令。完整性级别导致 UIPI 阻止消息时给出明确错误，不降低安全策略。
-- 自动更新不进入 V1；崩溃转储和其他 P1 项属于 V1 发布后的增强。
+- 自动更新、边缘停留进度提示和崩溃转储不进入当前产品范围；前台进程黑/白名单进入 V1。

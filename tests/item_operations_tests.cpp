@@ -5,6 +5,8 @@
 #include "core/item_operations.h"
 #include "platform/windows/uuid.h"
 
+#include <ranges>
+
 TEST_CASE("PROD-ITEM-001 add and edit preserve identity and usage statistics")
 {
     hlaunch::core::ItemsDocument document{
@@ -60,6 +62,92 @@ TEST_CASE("PROD-ITEM-001 mutations reject invalid locations and duplicate IDs")
         hlaunch::core::updateItem(document, hlaunch::core::ItemLocation{0, 2}, 0, {});
     REQUIRE_FALSE(invalid.has_value());
     CHECK(invalid.error() == hlaunch::core::ItemMutationError::InvalidItem);
+}
+
+TEST_CASE("PROD-ITEM-001 add honors an explicitly requested empty Grid slot")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "One",
+            .items = {{
+                .id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                .name = "Existing",
+                .gridSlot = 2U,
+            }},
+        }},
+    };
+
+    const auto added = hlaunch::core::addItem(
+        document, 0U,
+        hlaunch::core::LaunchItem{
+            .id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            .name = "Added",
+        },
+        17U);
+
+    REQUIRE(added.has_value());
+    REQUIRE(document.tabs.front().items.size() == 2U);
+    CHECK(hlaunch::core::gridSlotForItem(document.tabs.front(), added->itemIndex) == 17U);
+    CHECK(document.tabs.front().items.front().gridSlot == 2U);
+}
+
+TEST_CASE("PROD-GRID-001 expanding columns preserves two dimensional coordinates")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "One",
+            .items = {
+                {.name = "A", .gridSlot = 0U},
+                {.name = "B", .gridSlot = 4U},
+                {.name = "C", .gridSlot = 5U},
+                {.name = "D", .gridSlot = 9U},
+            },
+        }},
+    };
+
+    REQUIRE(hlaunch::core::reflowGridColumns(document, 5U, 7U).has_value());
+    const auto slotFor = [&document](const std::string_view name) {
+        const auto& items = document.tabs.front().items;
+        return std::ranges::find(items, name, &hlaunch::core::LaunchItem::name)->gridSlot;
+    };
+    CHECK(slotFor("A") == 0U);
+    CHECK(slotFor("B") == 4U);
+    CHECK(slotFor("C") == 7U);
+    CHECK(slotFor("D") == 11U);
+}
+
+TEST_CASE("PROD-GRID-001 shrinking columns moves only clipped items forward locally")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "One",
+            .items = {
+                {.name = "A", .gridSlot = 0U},
+                {.name = "B clipped row zero", .gridSlot = 4U},
+                {.name = "C", .gridSlot = 5U},
+                {.name = "D", .gridSlot = 7U},
+                {.name = "E clipped row one", .gridSlot = 9U},
+                {.name = "F", .gridSlot = 11U},
+            },
+        }},
+    };
+
+    REQUIRE(hlaunch::core::reflowGridColumns(document, 5U, 3U).has_value());
+    const auto slotFor = [&document](const std::string_view name) {
+        const auto& items = document.tabs.front().items;
+        return std::ranges::find(items, name, &hlaunch::core::LaunchItem::name)->gridSlot;
+    };
+    CHECK(slotFor("A") == 0U);
+    CHECK(slotFor("C") == 3U);
+    CHECK(slotFor("B clipped row zero") == 4U);
+    CHECK(slotFor("D") == 5U);
+    CHECK(slotFor("E clipped row one") == 6U);
+    CHECK(slotFor("F") == 7U);
+    CHECK_FALSE(hlaunch::core::itemIndexAtGridSlot(document.tabs.front(), 1U));
+    CHECK_FALSE(hlaunch::core::itemIndexAtGridSlot(document.tabs.front(), 2U));
 }
 
 TEST_CASE("PROD-DROP-001 exact launch duplicates ignore presentation fields")
@@ -204,7 +292,7 @@ TEST_CASE("PROD-GRID-001 move transfers an item to an exact position in another 
     CHECK(document.tabs[1].items[1].id == "third");
 }
 
-TEST_CASE("PROD-GRID-001 invalid move leaves the document unchanged")
+TEST_CASE("PROD-GRID-001 move to an empty Grid slot preserves the gap")
 {
     hlaunch::core::ItemsDocument document{
         .tabs = {hlaunch::core::Tab{
@@ -214,10 +302,137 @@ TEST_CASE("PROD-GRID-001 invalid move leaves the document unchanged")
         }},
     };
 
-    const auto invalidTarget = hlaunch::core::moveItem(document, {0, 0}, 0, 1);
+    const auto moved = hlaunch::core::moveItem(document, {0, 0}, 0, 7);
 
-    REQUIRE_FALSE(invalidTarget.has_value());
-    CHECK(invalidTarget.error() == hlaunch::core::ItemMutationError::InvalidTargetIndex);
+    REQUIRE(moved.has_value());
     REQUIRE(document.tabs[0].items.size() == 1);
     CHECK(document.tabs[0].items[0].id == "first");
+    CHECK(document.tabs[0].items[0].gridSlot == 7U);
+    CHECK(hlaunch::core::gridSlotExtent(document.tabs[0]) == 8U);
+}
+
+TEST_CASE("PROD-GRID-001 invalid Grid slot leaves the document unchanged")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "One",
+            .items = {{.id = "first", .name = "First"}},
+        }},
+    };
+    const auto original = document;
+
+    const auto moved = hlaunch::core::moveItem(
+        document, {0, 0}, 0, hlaunch::core::maximumGridSlotsPerTab);
+
+    REQUIRE_FALSE(moved.has_value());
+    CHECK(moved.error() == hlaunch::core::ItemMutationError::InvalidTargetIndex);
+    CHECK(document == original);
+}
+
+TEST_CASE("PROD-DROP-001 batch import starts at the dropped Grid slot")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "One",
+            .items = {
+                {.id = "existing-first", .name = "Existing first", .target = "first.exe", .gridSlot = 0},
+                {.id = "existing-later", .name = "Existing later", .target = "later.exe", .gridSlot = 4},
+            },
+        }},
+    };
+    std::vector<hlaunch::core::LaunchItem> imported{
+        {.id = "imported-first", .name = "Imported first", .target = "imported-first.exe"},
+        {.id = "imported-second", .name = "Imported second", .target = "imported-second.exe"},
+    };
+
+    const auto result = hlaunch::core::addImportedItems(
+        document, 0, std::move(imported), false, 2U);
+
+    REQUIRE(result.has_value());
+    REQUIRE(result->added.size() == 2U);
+    CHECK(document.tabs[0].items[0].gridSlot == 0U);
+    CHECK(document.tabs[0].items[1].id == "imported-first");
+    CHECK(document.tabs[0].items[1].gridSlot == 2U);
+    CHECK(document.tabs[0].items[2].id == "imported-second");
+    CHECK(document.tabs[0].items[2].gridSlot == 3U);
+    CHECK(document.tabs[0].items[3].id == "existing-later");
+    CHECK(document.tabs[0].items[3].gridSlot == 4U);
+}
+
+TEST_CASE("PROD-DROP-001 occupied Grid slots shift forward without reordering")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "One",
+            .items = {
+                {.id = "existing-a", .name = "A", .target = "a.exe", .gridSlot = 2},
+                {.id = "existing-b", .name = "B", .target = "b.exe", .gridSlot = 3},
+                {.id = "existing-c", .name = "C", .target = "c.exe", .gridSlot = 5},
+            },
+        }},
+    };
+
+    const auto result = hlaunch::core::addImportedItems(
+        document,
+        0,
+        {{.id = "imported", .name = "Imported", .target = "imported.exe"}},
+        false,
+        2U);
+
+    REQUIRE(result.has_value());
+    REQUIRE(document.tabs[0].items.size() == 4U);
+    CHECK(document.tabs[0].items[0].id == "imported");
+    CHECK(document.tabs[0].items[0].gridSlot == 2U);
+    CHECK(document.tabs[0].items[1].id == "existing-a");
+    CHECK(document.tabs[0].items[1].gridSlot == 3U);
+    CHECK(document.tabs[0].items[2].id == "existing-b");
+    CHECK(document.tabs[0].items[2].gridSlot == 4U);
+    CHECK(document.tabs[0].items[3].id == "existing-c");
+    CHECK(document.tabs[0].items[3].gridSlot == 5U);
+}
+
+TEST_CASE("PROD-GRID-001 move tab preserves the complete tab and final order")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {
+            {.id = "first", .name = "First"},
+            {
+                .id = "second",
+                .name = "Second",
+                .items = {{.id = "item", .name = "Item", .target = "item.exe"}},
+            },
+            {.id = "third", .name = "Third"},
+        },
+    };
+
+    const auto moved = hlaunch::core::moveTab(document, 1, 0);
+
+    REQUIRE(moved.has_value());
+    CHECK(*moved == 0U);
+    REQUIRE(document.tabs.size() == 3U);
+    CHECK(document.tabs[0].id == "second");
+    REQUIRE(document.tabs[0].items.size() == 1U);
+    CHECK(document.tabs[0].items[0].id == "item");
+    CHECK(document.tabs[1].id == "first");
+    CHECK(document.tabs[2].id == "third");
+}
+
+TEST_CASE("PROD-GRID-001 invalid tab move is atomic")
+{
+    hlaunch::core::ItemsDocument document{
+        .tabs = {
+            {.id = "first", .name = "First"},
+            {.id = "second", .name = "Second"},
+        },
+    };
+    const auto original = document;
+
+    const auto moved = hlaunch::core::moveTab(document, 0, 2);
+
+    REQUIRE_FALSE(moved.has_value());
+    CHECK(moved.error() == hlaunch::core::ItemMutationError::InvalidTab);
+    CHECK(document == original);
 }

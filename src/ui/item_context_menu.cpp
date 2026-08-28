@@ -6,15 +6,6 @@
 namespace hlaunch::ui {
 namespace {
 
-constexpr UINT_PTR runAsAdministratorMenuCommand = 100U;
-constexpr UINT_PTR openLocationMenuCommand = 101U;
-constexpr UINT_PTR copyNameMenuCommand = 102U;
-constexpr UINT_PTR copyTargetMenuCommand = 103U;
-constexpr UINT_PTR copyCommandLineMenuCommand = 104U;
-constexpr UINT_PTR moveToTabMenuCommandBase = 200U;
-constexpr UINT_PTR lockButtonMenuCommand = 301U;
-constexpr UINT_PTR rowColumnMenuCommand = 302U;
-
 std::wstring utf8ToMenuText(const std::string_view value)
 {
     if (value.empty()) {
@@ -59,6 +50,17 @@ bool appendMenuItem(
 
 } // namespace
 
+std::optional<std::size_t> moveToTabIndexFromMenuCommand(
+    const UINT_PTR command,
+    const std::size_t tabCount) noexcept
+{
+    if (command < moveToTabMenuCommandBase) {
+        return std::nullopt;
+    }
+    const auto tabIndex = static_cast<std::size_t>(command - moveToTabMenuCommandBase);
+    return tabIndex < tabCount ? std::optional<std::size_t>{tabIndex} : std::nullopt;
+}
+
 wil::unique_hmenu createItemContextMenu(
     const core::ItemsDocument& document,
     const core::ItemLocation itemLocation)
@@ -76,13 +78,31 @@ wil::unique_hmenu createItemContextMenu(
     }
 
     const UINT placeholderFlags = MF_STRING | MF_DISABLED | MF_GRAYED;
+    const auto& item = document.tabs[itemLocation.tabIndex].items[itemLocation.itemIndex];
+    const UINT openLocationFlags = item.type == core::ItemType::Url
+        ? placeholderFlags
+        : MF_STRING;
     if (!appendMenuItem(menu.get(), MF_STRING, static_cast<UINT_PTR>(ItemContextCommand::Open), L"打开\tEnter")
-        || !appendMenuItem(menu.get(), placeholderFlags, runAsAdministratorMenuCommand, L"作为菜单打开")
+        || !appendMenuItem(
+            menu.get(),
+            MF_STRING,
+            static_cast<UINT_PTR>(ItemContextCommand::RunAsAdministrator),
+            L"以管理员身份运行")
         || !appendMenuItem(menu.get(), MF_SEPARATOR, 0, nullptr)
-        || !appendMenuItem(menu.get(), placeholderFlags, openLocationMenuCommand, L"打开文件所在位置")
-        || !appendMenuItem(copyMenu.get(), placeholderFlags, copyNameMenuCommand, L"复制名称")
-        || !appendMenuItem(copyMenu.get(), placeholderFlags, copyTargetMenuCommand, L"复制目标")
-        || !appendMenuItem(copyMenu.get(), placeholderFlags, copyCommandLineMenuCommand, L"复制完整命令")
+        || !appendMenuItem(
+            menu.get(),
+            openLocationFlags,
+            static_cast<UINT_PTR>(ItemContextCommand::OpenLocation),
+            L"打开文件所在位置")
+        || !appendMenuItem(
+            copyMenu.get(), MF_STRING, static_cast<UINT_PTR>(ItemContextCommand::CopyName), L"复制名称")
+        || !appendMenuItem(
+            copyMenu.get(), MF_STRING, static_cast<UINT_PTR>(ItemContextCommand::CopyTarget), L"复制目标")
+        || !appendMenuItem(
+            copyMenu.get(),
+            MF_STRING,
+            static_cast<UINT_PTR>(ItemContextCommand::CopyCommandLine),
+            L"复制完整命令")
         || !appendMenuItem(
             menu.get(),
             MF_POPUP | MF_STRING,
@@ -93,14 +113,14 @@ wil::unique_hmenu createItemContextMenu(
     copyMenu.release();
 
     if (!appendMenuItem(menu.get(), MF_SEPARATOR, 0, nullptr)
-        || !appendMenuItem(menu.get(), placeholderFlags, lockButtonMenuCommand, L"锁定按钮")
         || !appendMenuItem(menu.get(), MF_STRING, static_cast<UINT_PTR>(ItemContextCommand::Insert), L"插入按钮\tIns")) {
         return {};
     }
     for (std::size_t index = 0; index < document.tabs.size(); ++index) {
-        const UINT flags = placeholderFlags | (index == itemLocation.tabIndex ? MF_CHECKED : 0U);
+        const UINT flags = MF_STRING
+            | (index == itemLocation.tabIndex ? MF_DISABLED | MF_GRAYED | MF_CHECKED : 0U);
         const auto label = utf8ToMenuText(document.tabs[index].name);
-        if (!appendMenuItem(moveMenu.get(), flags, moveToTabMenuCommandBase + index, label.c_str())) {
+        if (!appendMenuItem(moveMenu.get(), flags, moveToTabMenuCommand(index), label.c_str())) {
             return {};
         }
     }
@@ -114,7 +134,6 @@ wil::unique_hmenu createItemContextMenu(
     moveMenu.release();
 
     if (!appendMenuItem(menu.get(), MF_STRING, static_cast<UINT_PTR>(ItemContextCommand::Delete), L"删除\tDel")
-        || !appendMenuItem(menu.get(), placeholderFlags, rowColumnMenuCommand, L"行/列操作")
         || !appendMenuItem(menu.get(), MF_SEPARATOR, 0, nullptr)
         || !appendMenuItem(menu.get(), MF_STRING, static_cast<UINT_PTR>(ItemContextCommand::Properties), L"属性\tCtrl+P")) {
         return {};

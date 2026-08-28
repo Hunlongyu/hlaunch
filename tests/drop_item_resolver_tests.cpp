@@ -70,6 +70,7 @@ TEST_CASE("PROD-DROP-001 resolves supported sources in their original order")
     using hlaunch::platform::windows::DroppedSourceKind;
     const auto result = hlaunch::platform::windows::resolveDroppedSources({
         .targetTabIndex = 2,
+        .targetGridSlot = 17,
         .sources = {
             DroppedSource{DroppedSourceKind::Path, folder.wstring()},
             DroppedSource{DroppedSourceKind::Path, executable.wstring()},
@@ -82,6 +83,7 @@ TEST_CASE("PROD-DROP-001 resolves supported sources in their original order")
     });
 
     CHECK(result.targetTabIndex == 2U);
+    CHECK(result.targetGridSlot == 17U);
     CHECK(result.unsupportedCount == 2U);
     REQUIRE(result.items.size() == 5U);
     CHECK(result.items[0].type == hlaunch::core::ItemType::Folder);
@@ -94,6 +96,64 @@ TEST_CASE("PROD-DROP-001 resolves supported sources in their original order")
     CHECK(result.items[3].name == "notes.txt");
     CHECK(result.items[4].type == hlaunch::core::ItemType::Url);
     CHECK(result.items[4].name == "example.com");
+}
+
+TEST_CASE("PROD-DROP-001 launches an occupied item with dropped paths as arguments")
+{
+    const hlaunch::core::LaunchItem item{
+        .id = "11111111-1111-4111-8111-111111111111",
+        .type = hlaunch::core::ItemType::Application,
+        .name = "ICO Maker",
+        .target = R"(C:\Tools\ico-maker.exe)",
+        .arguments = {"--quality", "mid"},
+    };
+    const auto launched = hlaunch::platform::windows::makeDropLaunchItem(
+        item,
+        {
+            {hlaunch::platform::windows::DroppedSourceKind::Path,
+             LR"(C:\Images\history.svg)"},
+            {hlaunch::platform::windows::DroppedSourceKind::Url,
+             L"https://example.com/ignored"},
+            {hlaunch::platform::windows::DroppedSourceKind::Path,
+             LR"(C:\资料\second image.svg)"},
+        });
+
+    REQUIRE(launched.has_value());
+    CHECK(launched->id == item.id);
+    CHECK(launched->target == item.target);
+    CHECK((launched->arguments == std::vector<std::string>{
+        "--quality",
+        "mid",
+        R"(C:\Images\history.svg)",
+        "C:\\资料\\second image.svg",
+    }));
+    CHECK((item.arguments == std::vector<std::string>{"--quality", "mid"}));
+}
+
+TEST_CASE("PROD-DROP-001 does not turn a URL-only drop into launch arguments")
+{
+    const hlaunch::core::LaunchItem item{
+        .type = hlaunch::core::ItemType::Application,
+        .target = R"(C:\Tools\ico-maker.exe)",
+    };
+
+    CHECK_FALSE(hlaunch::platform::windows::makeDropLaunchItem(
+        item,
+        {{hlaunch::platform::windows::DroppedSourceKind::Url,
+          L"https://example.com"}}));
+}
+
+TEST_CASE("PROD-DROP-001 rejects an invalid Unicode dropped path")
+{
+    const hlaunch::core::LaunchItem item{
+        .type = hlaunch::core::ItemType::Application,
+        .target = R"(C:\Tools\ico-maker.exe)",
+    };
+    const std::wstring invalidPath{static_cast<wchar_t>(0xD800)};
+
+    CHECK_FALSE(hlaunch::platform::windows::makeDropLaunchItem(
+        item,
+        {{hlaunch::platform::windows::DroppedSourceKind::Path, invalidPath}}));
 }
 
 TEST_CASE("PROD-DROP-001 rejects script-like URL schemes")

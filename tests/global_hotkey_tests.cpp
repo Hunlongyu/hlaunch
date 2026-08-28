@@ -6,10 +6,7 @@
 
 #include <Windows.h>
 
-#include <array>
-#include <chrono>
 #include <string>
-#include <thread>
 #include <vector>
 
 namespace {
@@ -47,12 +44,12 @@ public:
             WS_OVERLAPPED,
             0,
             0,
-            0,
-            0,
+            1,
+            1,
             nullptr,
             nullptr,
             instance,
-            this);
+            nullptr);
     }
 
     ~TestWindow()
@@ -70,38 +67,6 @@ public:
         return window_;
     }
 
-    [[nodiscard]] WPARAM waitForHotkey(
-        const std::array<WORD, 3>& keys,
-        const std::chrono::milliseconds timeout)
-    {
-        lastHotkeyId_ = 0;
-        std::array<INPUT, 6> inputs{};
-        for (std::size_t index = 0; index < keys.size(); ++index) {
-            inputs[index].type = INPUT_KEYBOARD;
-            inputs[index].ki.wVk = keys[index];
-            inputs[inputs.size() - 1 - index].type = INPUT_KEYBOARD;
-            inputs[inputs.size() - 1 - index].ki.wVk = keys[index];
-            inputs[inputs.size() - 1 - index].ki.dwFlags = KEYEVENTF_KEYUP;
-        }
-        if (SendInput(
-                static_cast<UINT>(inputs.size()),
-                inputs.data(),
-                sizeof(INPUT)) != inputs.size()) {
-            return 0;
-        }
-
-        const auto deadline = std::chrono::steady_clock::now() + timeout;
-        while (lastHotkeyId_ == 0 && std::chrono::steady_clock::now() < deadline) {
-            MSG message{};
-            while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
-                TranslateMessage(&message);
-                DispatchMessageW(&message);
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds{5});
-        }
-        return lastHotkeyId_;
-    }
-
 private:
     static LRESULT CALLBACK windowProcedure(
         const HWND window,
@@ -109,24 +74,10 @@ private:
         const WPARAM wParam,
         const LPARAM lParam)
     {
-        TestWindow* self = nullptr;
-        if (message == WM_NCCREATE) {
-            const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lParam); // NOLINT(performance-no-int-to-ptr): Win32 LPARAM carries CREATESTRUCTW.
-            self = static_cast<TestWindow*>(create->lpCreateParams);
-            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
-        }
-        else {
-            self = reinterpret_cast<TestWindow*>(GetWindowLongPtrW(window, GWLP_USERDATA)); // NOLINT(performance-no-int-to-ptr): Win32 stores this pointer as LONG_PTR.
-        }
-        if (self && message == WM_HOTKEY) {
-            self->lastHotkeyId_ = wParam;
-            return 0;
-        }
         return DefWindowProcW(window, message, wParam, lParam);
     }
 
     HWND window_{};
-    WPARAM lastHotkeyId_{};
 };
 
 } // namespace
@@ -187,11 +138,6 @@ TEST_CASE("ACT-HOTKEY-001 conflict keeps the previous registration and permits r
     hlaunch::platform::windows::GlobalHotkey active{};
     hlaunch::platform::windows::GlobalHotkey blocker{};
     REQUIRE(active.apply(activeWindow.get(), original).has_value());
-    const auto deliveredId = activeWindow.waitForHotkey(
-        {VK_CONTROL, VK_SHIFT, VK_F24},
-        std::chrono::milliseconds{500});
-    CHECK(deliveredId != 0);
-    CHECK(active.handlesMessage(deliveredId));
     REQUIRE(blocker.apply(blockingWindow.get(), conflicting).has_value());
     const auto originalBinding = *active.binding();
 

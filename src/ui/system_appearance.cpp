@@ -35,7 +35,7 @@ LOGFONTW systemMessageFont(const UINT dpi) noexcept
     return fallback;
 }
 
-BOOL CALLBACK applyChildFont(const HWND child, const LPARAM parameter)
+BOOL CALLBACK applyChildFont(const HWND child, const LPARAM parameter) noexcept
 {
     SendMessageW(child, WM_SETFONT, static_cast<WPARAM>(parameter), TRUE);
     return TRUE;

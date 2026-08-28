@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <filesystem>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -31,16 +32,21 @@ struct IconLoadResult
     std::uint32_t height{};
     std::vector<std::uint8_t> pixels{};
     bool succeeded{};
+    bool fromDiskCache{};
 };
 
-[[nodiscard]] IconLoadResult loadIconPixels(const IconLoadRequest &request);
+[[nodiscard]] IconLoadResult loadIconPixels(
+    const IconLoadRequest &request,
+    const std::filesystem::path &cacheDirectory = {});
 
 class IconLoader final
 {
   public:
     using CompletionHandler = std::function<void(IconLoadResult)>;
 
-    explicit IconLoader(CompletionHandler completionHandler);
+    explicit IconLoader(
+        CompletionHandler completionHandler,
+        std::filesystem::path cacheDirectory = {});
     ~IconLoader();
 
     IconLoader(const IconLoader &) = delete;
@@ -56,6 +62,7 @@ class IconLoader final
     std::condition_variable condition_{};
     std::deque<IconLoadRequest> pending_{};
     bool stopping_{};
+    std::filesystem::path cacheDirectory_{};
     std::thread thread_{};
 };
 
