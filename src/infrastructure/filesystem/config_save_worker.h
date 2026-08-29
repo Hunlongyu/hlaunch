@@ -39,7 +39,7 @@ private:
         core::ApplicationConfig snapshot{};
     };
 
-    void run();
+    void run() noexcept;
 
     std::filesystem::path path_{};
     CompletionHandler completionHandler_{};

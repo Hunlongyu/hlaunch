@@ -55,7 +55,7 @@ class IconLoader final
     void submit(IconLoadRequest request);
 
   private:
-    void run();
+    void run() noexcept;
 
     CompletionHandler completionHandler_{};
     std::mutex mutex_{};

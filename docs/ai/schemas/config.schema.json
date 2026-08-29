@@ -49,11 +49,11 @@
               "default": ["left"]
             },
             "edgeMode": { "enum": ["desktopOuter", "everyMonitor"], "default": "desktopOuter" },
-            "thicknessDip": { "type": "number", "minimum": 2, "maximum": 16, "default": 4 },
-            "cornerSizeDip": { "type": "number", "minimum": 8, "maximum": 64, "default": 16 },
-            "dwellMs": { "type": "integer", "minimum": 100, "maximum": 1000, "default": 300 },
-            "pollMs": { "type": "integer", "minimum": 30, "maximum": 50, "default": 40 },
-            "cooldownMs": { "type": "integer", "minimum": 0, "maximum": 5000, "default": 500 },
+            "thicknessDip": { "type": "number", "minimum": 2, "maximum": 16, "default": 4, "deprecated": true, "description": "兼容旧版；新版忽略输入并固定使用 4 DIP。" },
+            "cornerSizeDip": { "type": "number", "minimum": 8, "maximum": 64, "default": 16, "deprecated": true, "description": "兼容旧版；新版忽略输入并固定使用 16 DIP。" },
+            "dwellMs": { "type": "integer", "minimum": 100, "maximum": 1000, "default": 180, "deprecated": true, "description": "兼容旧版；新版忽略输入并固定使用 180 ms。" },
+            "pollMs": { "type": "integer", "minimum": 30, "maximum": 50, "default": 30, "deprecated": true, "description": "兼容旧版；新版忽略输入并固定使用 30 ms。" },
+            "cooldownMs": { "type": "integer", "minimum": 0, "maximum": 5000, "default": 100, "deprecated": true, "description": "兼容旧版；新版忽略输入并固定使用 100 ms。" },
             "disableOnFullscreen": { "type": "boolean", "default": true },
             "foregroundProcessBlocklist": {
               "type": "array",

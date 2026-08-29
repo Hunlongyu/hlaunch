@@ -45,6 +45,22 @@ void showStartupError(const wchar_t* message)
     ui::showTaskMessage(nullptr, L"HLaunch", message, ui::TaskDialogIcon::Error);
 }
 
+void showNewerSchemaError(
+    const std::filesystem::path& path,
+    const wchar_t* const documentName)
+{
+    std::wstring details = documentName;
+    details += L" 由更高版本的 HLaunch 创建。当前版本不会覆盖该文件。\n\n文件路径：\n";
+    details += path.native();
+    details += L"\n\n请使用创建该文件的版本或更新版本打开。";
+    ui::showTaskMessage(
+        nullptr,
+        L"HLaunch 数据版本过高",
+        L"当前版本无法安全读取数据。",
+        ui::TaskDialogIcon::Error,
+        details);
+}
+
 void showHotkeyError(const HWND owner, const platform::windows::HotkeyError& error)
 {
     std::wstring message{};
@@ -179,6 +195,10 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
     }
 
     const auto config = infrastructure::filesystem::loadConfig(paths->configFile);
+    if (config && config->readOnlyProtection) {
+        showNewerSchemaError(paths->configFile, L"配置文件 config.json");
+        return 5;
+    }
     if (!config || !config->value) {
         OutputDebugStringW(L"HLaunch could not load config.json.\n");
         showStartupError(L"无法读取 HLaunch 配置文件。");
@@ -216,6 +236,10 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
     }
 
     auto items = infrastructure::filesystem::loadItems(paths->itemsFile);
+    if (items && items->readOnlyProtection) {
+        showNewerSchemaError(paths->itemsFile, L"条目文件 items.json");
+        return 5;
+    }
     if (!items || !items->value) {
         if (!items) {
             infrastructure::logging::writeSystemError(infrastructure::logging::Level::Error,
@@ -458,6 +482,19 @@ LRESULT CALLBACK Application::activationWindowProcedure(const HWND window, const
 LRESULT Application::handleActivationMessage(const UINT message, const WPARAM wParam,
                                              const LPARAM lParam)
 {
+    if (message == WM_QUERYENDSESSION) {
+        return TRUE;
+    }
+    if (message == WM_ENDSESSION) {
+        if (wParam != FALSE) {
+            infrastructure::logging::write(
+                infrastructure::logging::Level::Info,
+                "windows_session_ending");
+            shutdownSaveWorkersForSessionEnd();
+            PostQuitMessage(0);
+        }
+        return 0;
+    }
     if (message == platform::windows::activationMessageId()) {
         const auto command = static_cast<platform::windows::ActivationCommand>(wParam);
         execute(command);
@@ -508,6 +545,12 @@ LRESULT Application::handleActivationMessage(const UINT message, const WPARAM wP
     return DefWindowProcW(activationWindow_, message, wParam, lParam);
 }
 
+void Application::shutdownSaveWorkersForSessionEnd() noexcept
+{
+    itemsSaver_.reset();
+    configSaver_.reset();
+}
+
 void Application::execute(const platform::windows::ActivationCommand command)
 {
     infrastructure::logging::write(infrastructure::logging::Level::Debug,
@@ -536,7 +579,7 @@ void Application::launch(const core::LaunchItem& item)
         infrastructure::logging::write(infrastructure::logging::Level::Info,
                                        "item_launch_succeeded");
         launcher_.recordSuccessfulLaunch(item.id);
-        launcher_.hide();
+        launcher_.hideAfterSuccessfulLaunchIfNeeded();
         return;
     }
     if (result.error().code == platform::windows::ShellLaunchErrorCode::Cancelled) {

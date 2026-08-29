@@ -147,6 +147,42 @@ TEST_CASE("ACT-EDGE-001 dwell requires leave and cooldown before rearming")
     REQUIRE(state.update(left, false, 2'301).has_value());
 }
 
+TEST_CASE("ACT-EDGE-001 default dwell favors responsive activation")
+{
+    hlaunch::activation::EdgeDwellStateMachine state{{
+        hlaunch::core::defaultScreenEdgeDwellMs,
+        hlaunch::core::defaultScreenEdgeCooldownMs,
+    }};
+    const auto left = hit(hlaunch::core::ScreenEdgeZone::Left);
+
+    CHECK(hlaunch::core::defaultScreenEdgeDwellMs == 180);
+    CHECK(hlaunch::core::defaultScreenEdgePollMs == 30);
+    CHECK_FALSE(state.update(left, false, 1'000).has_value());
+    CHECK_FALSE(state.update(left, false, 1'179).has_value());
+    REQUIRE(state.update(left, false, 1'180).has_value());
+}
+
+TEST_CASE("ACT-EDGE-001 default cooldown immediately starts a returned corner dwell")
+{
+    using hlaunch::activation::EdgeDwellPhase;
+    hlaunch::activation::EdgeDwellStateMachine state{{
+        hlaunch::core::defaultScreenEdgeDwellMs,
+        hlaunch::core::defaultScreenEdgeCooldownMs,
+    }};
+    const auto topLeft = hit(hlaunch::core::ScreenEdgeZone::TopLeft);
+
+    CHECK(hlaunch::core::defaultScreenEdgeCooldownMs == 100);
+    CHECK_FALSE(state.update(topLeft, false, 1'000).has_value());
+    REQUIRE(state.update(topLeft, false, 1'180).has_value());
+    CHECK_FALSE(state.update(std::nullopt, false, 1'210).has_value());
+    CHECK_FALSE(state.update(topLeft, false, 1'250).has_value());
+    CHECK(state.phase() == EdgeDwellPhase::Triggered);
+    CHECK_FALSE(state.update(topLeft, false, 1'280).has_value());
+    CHECK(state.phase() == EdgeDwellPhase::Pending);
+    CHECK_FALSE(state.update(topLeft, false, 1'459).has_value());
+    REQUIRE(state.update(topLeft, false, 1'460).has_value());
+}
+
 TEST_CASE("ACT-EDGE-001 switching zones, suppression and clock rollback restart dwell")
 {
     using hlaunch::activation::EdgeDwellPhase;

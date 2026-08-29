@@ -1,5 +1,7 @@
 #include "infrastructure/filesystem/config_save_worker.h"
 
+#include <Windows.h>
+
 #include <utility>
 
 namespace hlaunch::infrastructure::filesystem {
@@ -39,33 +41,55 @@ bool ConfigSaveWorker::submit(
     return true;
 }
 
-void ConfigSaveWorker::run()
+void ConfigSaveWorker::run() noexcept
 {
-    for (;;) {
-        std::optional<PendingSave> pending{};
-        {
-            std::unique_lock lock{mutex_};
-            condition_.wait(lock, [this] { return stopping_ || pending_.has_value(); });
-            if (!pending_ && stopping_) {
-                return;
+    try {
+        for (;;) {
+            std::optional<PendingSave> pending{};
+            {
+                std::unique_lock lock{mutex_};
+                condition_.wait(lock, [this] { return stopping_ || pending_.has_value(); });
+                if (!pending_ && stopping_) {
+                    return;
+                }
+                pending = std::move(pending_);
+                pending_.reset();
             }
-            pending = std::move(pending_);
+
+            try {
+                ConfigSaveCompletion completion{
+                    .revision = pending->revision,
+                    .snapshot = std::move(pending->snapshot),
+                };
+                try {
+                    if (const auto result = saveConfig(path_, completion.snapshot); !result) {
+                        completion.error = result.error();
+                    }
+                }
+                catch (...) {
+                    completion.error = StoreError{
+                        .code = StoreErrorCode::Unexpected,
+                        .path = path_,
+                        .systemCode = ERROR_UNHANDLED_EXCEPTION,
+                        .message = "unexpected exception while saving config",
+                    };
+                }
+                if (completionHandler_) {
+                    completionHandler_(std::move(completion));
+                }
+            }
+            catch (...) {
+                // A background failure must not terminate the application.
+            }
+        }
+    }
+    catch (...) {
+        try {
+            const std::scoped_lock lock{mutex_};
+            stopping_ = true;
             pending_.reset();
         }
-
-        ConfigSaveCompletion completion{
-            .revision = pending->revision,
-            .snapshot = std::move(pending->snapshot),
-        };
-        if (const auto result = saveConfig(path_, completion.snapshot); !result) {
-            completion.error = result.error();
-        }
-        if (completionHandler_) {
-            try {
-                completionHandler_(std::move(completion));
-            } catch (...) {
-                // Completion delivery must not terminate the storage thread.
-            }
+        catch (...) {
         }
     }
 }

@@ -2,13 +2,20 @@ cmake_minimum_required(VERSION 3.28)
 
 project(
     HLaunch
-    VERSION 0.1.4
+    VERSION 0.1.17
     DESCRIPTION "Lightweight native Windows grid launcher"
     LANGUAGES CXX
 )
 
 if(NOT WIN32)
     message(FATAL_ERROR "HLaunch only supports Windows.")
+endif()
+
+if(NOT CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "x64")
+    message(
+        FATAL_ERROR
+        "HLaunch only supports x64; detected ${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}."
+    )
 endif()
 
 set(CMAKE_CXX_STANDARD 23)

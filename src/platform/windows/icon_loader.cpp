@@ -168,39 +168,50 @@ void IconLoader::submit(IconLoadRequest request)
     condition_.notify_one();
 }
 
-void IconLoader::run()
+void IconLoader::run() noexcept
 {
     const ComApartment apartment{};
-    for (;;)
-    {
-        IconLoadRequest request{};
-        {
-            std::unique_lock lock{mutex_};
-            condition_.wait(lock, [this] { return stopping_ || !pending_.empty(); });
-            if (stopping_)
+    try {
+        for (;;) {
+            IconLoadRequest request{};
             {
-                return;
+                std::unique_lock lock{mutex_};
+                condition_.wait(lock, [this] { return stopping_ || !pending_.empty(); });
+                if (stopping_) {
+                    return;
+                }
+                request = std::move(pending_.front());
+                pending_.pop_front();
             }
-            request = std::move(pending_.front());
-            pending_.pop_front();
-        }
 
-        IconLoadResult result{
-            .itemId = request.itemId,
-            .sourceKey = request.sourceKey,
-            .requestedPixelSize = request.pixelSize,
-        };
-        try
-        {
-            result = loadIconPixels(request, cacheDirectory_);
+            try {
+                IconLoadResult result{
+                    .itemId = request.itemId,
+                    .sourceKey = request.sourceKey,
+                    .requestedPixelSize = request.pixelSize,
+                };
+                try {
+                    result = loadIconPixels(request, cacheDirectory_);
+                }
+                catch (...) {
+                    result.succeeded = false;
+                }
+                if (completionHandler_) {
+                    completionHandler_(std::move(result));
+                }
+            }
+            catch (...) {
+                // A background failure must not terminate the application.
+            }
         }
-        catch (...)
-        {
-            result.succeeded = false;
+    }
+    catch (...) {
+        try {
+            const std::scoped_lock lock{mutex_};
+            stopping_ = true;
+            pending_.clear();
         }
-        if (completionHandler_)
-        {
-            completionHandler_(std::move(result));
+        catch (...) {
         }
     }
 }

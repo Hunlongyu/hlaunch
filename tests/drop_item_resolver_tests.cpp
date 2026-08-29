@@ -17,9 +17,11 @@ public:
     TemporaryDirectory()
     {
         const auto sequence = nextSequence_.fetch_add(1U);
+        LARGE_INTEGER timestamp{};
+        QueryPerformanceCounter(&timestamp);
         path_ = std::filesystem::temp_directory_path()
             / (L"HLaunchDropTests-" + std::to_wstring(GetCurrentProcessId()) + L"-"
-                + std::to_wstring(sequence));
+                + std::to_wstring(timestamp.QuadPart) + L"-" + std::to_wstring(sequence));
         std::filesystem::create_directories(path_);
     }
 

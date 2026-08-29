@@ -50,7 +50,7 @@ class DropItemResolver final
     void submit(DropImportRequest request);
 
   private:
-    void run();
+    void run() noexcept;
 
     CompletionHandler completionHandler_{};
     std::mutex mutex_{};

@@ -22,6 +22,7 @@ struct ProviderState final {
     LauncherAccessibilityCallbacks callbacks;
     std::atomic_bool connected{true};
     DWORD uiThreadId{GetCurrentThreadId()};
+    std::mutex callbacksMutex;
     std::mutex snapshotMutex;
     std::vector<LauncherAccessibleNode> cachedSnapshot;
 };
@@ -35,10 +36,22 @@ std::vector<LauncherAccessibleNode> snapshot(const std::shared_ptr<ProviderState
 
 void refreshSnapshot(const std::shared_ptr<ProviderState>& state)
 {
-    if (!state->connected || !state->callbacks.snapshot) return;
-    auto updated = state->callbacks.snapshot();
+    std::function<std::vector<LauncherAccessibleNode>()> callback{};
+    {
+        const std::scoped_lock lock{state->callbacksMutex};
+        if (!state->connected || !state->callbacks.snapshot) return;
+        callback = state->callbacks.snapshot;
+    }
+    auto updated = callback();
     const std::scoped_lock lock{state->snapshotMutex};
+    if (!state->connected) return;
     state->cachedSnapshot = std::move(updated);
+}
+
+HWND providerWindow(const std::shared_ptr<ProviderState>& state)
+{
+    const std::scoped_lock lock{state->callbacksMutex};
+    return state->connected ? state->callbacks.window : nullptr;
 }
 
 HRESULT dispatchAction(
@@ -46,18 +59,30 @@ HRESULT dispatchAction(
     const UINT message,
     const std::wstring_view key)
 {
-    if (!state->connected) return UIA_E_ELEMENTNOTAVAILABLE;
+    std::function<void(std::wstring_view)> action{};
+    HWND window{};
+    {
+        const std::scoped_lock lock{state->callbacksMutex};
+        if (!state->connected) return UIA_E_ELEMENTNOTAVAILABLE;
+        if (GetCurrentThreadId() == state->uiThreadId) {
+            if (message == launcherAccessibilityInvokeMessage) {
+                action = state->callbacks.invoke;
+            }
+            else if (message == launcherAccessibilityFocusMessage) {
+                action = state->callbacks.focus;
+            }
+        }
+        else {
+            window = state->callbacks.window;
+        }
+    }
     if (GetCurrentThreadId() == state->uiThreadId) {
-        if (message == launcherAccessibilityInvokeMessage && state->callbacks.invoke) {
-            state->callbacks.invoke(key);
-        }
-        else if (message == launcherAccessibilityFocusMessage && state->callbacks.focus) {
-            state->callbacks.focus(key);
-        }
+        if (action) action(key);
         return S_OK;
     }
+    if (!window) return UIA_E_ELEMENTNOTAVAILABLE;
     std::wstring stableKey{key};
-    SendMessageW(state->callbacks.window, message, 0, reinterpret_cast<LPARAM>(&stableKey));
+    SendMessageW(window, message, 0, reinterpret_cast<LPARAM>(&stableKey));
     return state->connected ? S_OK : UIA_E_ELEMENTNOTAVAILABLE;
 }
 
@@ -176,9 +201,13 @@ public:
     {
         if (!provider) return E_POINTER;
         *provider = nullptr;
-        return key_ == rootKey && state_->connected
-            ? UiaHostProviderFromHwnd(state_->callbacks.window, provider)
-            : S_OK;
+        try {
+            const auto window = providerWindow(state_);
+            return key_ == rootKey && window
+                ? UiaHostProviderFromHwnd(window, provider)
+                : S_OK;
+        }
+        catch (...) { return winrt::to_hresult(); }
     }
 
     HRESULT __stdcall Navigate(
@@ -248,11 +277,14 @@ public:
     HRESULT __stdcall get_BoundingRectangle(UiaRect* rectangle) noexcept final
     {
         if (!rectangle) return E_POINTER;
-        const auto nodes = snapshot(state_);
-        const auto node = findNode(nodes, key_);
-        if (!node) return UIA_E_ELEMENTNOTAVAILABLE;
-        *rectangle = node->bounds;
-        return S_OK;
+        try {
+            const auto nodes = snapshot(state_);
+            const auto node = findNode(nodes, key_);
+            if (!node) return UIA_E_ELEMENTNOTAVAILABLE;
+            *rectangle = node->bounds;
+            return S_OK;
+        }
+        catch (...) { return winrt::to_hresult(); }
     }
 
     HRESULT __stdcall GetEmbeddedFragmentRoots(SAFEARRAY** roots) noexcept final
@@ -274,8 +306,12 @@ public:
         IRawElementProviderFragmentRoot** root) noexcept final
     {
         if (!root) return E_POINTER;
-        *root = makeRoot();
-        return *root ? S_OK : E_OUTOFMEMORY;
+        *root = nullptr;
+        try {
+            *root = makeRoot();
+            return *root ? S_OK : E_OUTOFMEMORY;
+        }
+        catch (...) { return winrt::to_hresult(); }
     }
 
     HRESULT __stdcall ElementProviderFromPoint(
@@ -285,26 +321,33 @@ public:
     {
         if (!result) return E_POINTER;
         *result = nullptr;
-        const auto nodes = snapshot(state_);
-        for (auto current = nodes.rbegin(); current != nodes.rend(); ++current) {
-            const auto& bounds = current->bounds;
-            if (x >= bounds.left && x < bounds.left + bounds.width
-                && y >= bounds.top && y < bounds.top + bounds.height) {
-                *result = makeFragment(current->key);
-                break;
+        try {
+            const auto nodes = snapshot(state_);
+            for (auto current = nodes.rbegin(); current != nodes.rend(); ++current) {
+                const auto& bounds = current->bounds;
+                if (x >= bounds.left && x < bounds.left + bounds.width
+                    && y >= bounds.top && y < bounds.top + bounds.height) {
+                    *result = makeFragment(current->key);
+                    break;
+                }
             }
+            return S_OK;
         }
-        return S_OK;
+        catch (...) { return winrt::to_hresult(); }
     }
 
     HRESULT __stdcall GetFocus(IRawElementProviderFragment** result) noexcept final
     {
         if (!result) return E_POINTER;
         *result = nullptr;
-        const auto nodes = snapshot(state_);
-        const auto focused = std::ranges::find(nodes, true, &LauncherAccessibleNode::hasKeyboardFocus);
-        if (focused != nodes.end()) *result = makeFragment(focused->key);
-        return S_OK;
+        try {
+            const auto nodes = snapshot(state_);
+            const auto focused = std::ranges::find(
+                nodes, true, &LauncherAccessibleNode::hasKeyboardFocus);
+            if (focused != nodes.end()) *result = makeFragment(focused->key);
+            return S_OK;
+        }
+        catch (...) { return winrt::to_hresult(); }
     }
 
     HRESULT __stdcall Invoke() noexcept final
@@ -354,11 +397,14 @@ public:
     HRESULT __stdcall get_IsSelected(BOOL* value) noexcept final
     {
         if (!value) return E_POINTER;
-        const auto nodes = snapshot(state_);
-        const auto node = findNode(nodes, key_);
-        if (!node) return UIA_E_ELEMENTNOTAVAILABLE;
-        *value = node->selected ? TRUE : FALSE;
-        return S_OK;
+        try {
+            const auto nodes = snapshot(state_);
+            const auto node = findNode(nodes, key_);
+            if (!node) return UIA_E_ELEMENTNOTAVAILABLE;
+            *value = node->selected ? TRUE : FALSE;
+            return S_OK;
+        }
+        catch (...) { return winrt::to_hresult(); }
     }
 
     HRESULT __stdcall get_SelectionContainer(
@@ -366,12 +412,15 @@ public:
     {
         if (!container) return E_POINTER;
         *container = nullptr;
-        const auto nodes = snapshot(state_);
-        const auto node = findNode(nodes, key_);
-        if (!node) return UIA_E_ELEMENTNOTAVAILABLE;
-        auto provider = winrt::make_self<Provider>(state_, node->parentKey);
-        *container = provider.as<IRawElementProviderSimple>().detach();
-        return S_OK;
+        try {
+            const auto nodes = snapshot(state_);
+            const auto node = findNode(nodes, key_);
+            if (!node) return UIA_E_ELEMENTNOTAVAILABLE;
+            auto provider = winrt::make_self<Provider>(state_, node->parentKey);
+            *container = provider.as<IRawElementProviderSimple>().detach();
+            return S_OK;
+        }
+        catch (...) { return winrt::to_hresult(); }
     }
 
 private:
@@ -413,47 +462,84 @@ LauncherAccessibility::~LauncherAccessibility() { disconnect(); }
 
 LRESULT LauncherAccessibility::handleGetObject(const WPARAM wParam, const LPARAM lParam) noexcept
 {
-    if (!impl_ || !impl_->state->connected || lParam != UiaRootObjectId) return 0;
-    refreshSnapshot(impl_->state);
-    return UiaReturnRawElementProvider(
-        impl_->state->callbacks.window, wParam, lParam, impl_->root.get());
+    try {
+        if (!impl_ || !impl_->state->connected || lParam != UiaRootObjectId) return 0;
+        refreshSnapshot(impl_->state);
+        const auto window = providerWindow(impl_->state);
+        return window
+            ? UiaReturnRawElementProvider(window, wParam, lParam, impl_->root.get())
+            : 0;
+    }
+    catch (...) {
+        OutputDebugStringW(L"HLaunch UI Automation provider failed.\n");
+        return 0;
+    }
 }
 
 void LauncherAccessibility::raiseStructureChanged() noexcept
 {
-    if (!impl_ || !impl_->state->connected) return;
-    refreshSnapshot(impl_->state);
-    UiaRaiseStructureChangedEvent(impl_->root.get(), StructureChangeType_ChildrenInvalidated, nullptr, 0);
+    try {
+        if (!impl_ || !impl_->state->connected) return;
+        refreshSnapshot(impl_->state);
+        UiaRaiseStructureChangedEvent(
+            impl_->root.get(), StructureChangeType_ChildrenInvalidated, nullptr, 0);
+    }
+    catch (...) {
+        OutputDebugStringW(L"HLaunch UI Automation event failed.\n");
+    }
 }
 
 void LauncherAccessibility::raiseFocusChanged(const std::wstring_view key) noexcept
 {
-    if (!impl_ || !impl_->state->connected) return;
-    refreshSnapshot(impl_->state);
-    auto provider = winrt::make_self<Provider>(impl_->state, std::wstring{key});
-    UiaRaiseAutomationEvent(provider.as<IRawElementProviderSimple>().get(), UIA_AutomationFocusChangedEventId);
+    try {
+        if (!impl_ || !impl_->state->connected) return;
+        refreshSnapshot(impl_->state);
+        auto provider = winrt::make_self<Provider>(impl_->state, std::wstring{key});
+        UiaRaiseAutomationEvent(
+            provider.as<IRawElementProviderSimple>().get(),
+            UIA_AutomationFocusChangedEventId);
+    }
+    catch (...) {
+        OutputDebugStringW(L"HLaunch UI Automation event failed.\n");
+    }
 }
 
 void LauncherAccessibility::raiseSelectionChanged(const std::wstring_view key) noexcept
 {
-    if (!impl_ || !impl_->state->connected) return;
-    refreshSnapshot(impl_->state);
-    auto provider = winrt::make_self<Provider>(impl_->state, std::wstring{key});
-    UiaRaiseAutomationEvent(provider.as<IRawElementProviderSimple>().get(), UIA_SelectionItem_ElementSelectedEventId);
+    try {
+        if (!impl_ || !impl_->state->connected) return;
+        refreshSnapshot(impl_->state);
+        auto provider = winrt::make_self<Provider>(impl_->state, std::wstring{key});
+        UiaRaiseAutomationEvent(
+            provider.as<IRawElementProviderSimple>().get(),
+            UIA_SelectionItem_ElementSelectedEventId);
+    }
+    catch (...) {
+        OutputDebugStringW(L"HLaunch UI Automation event failed.\n");
+    }
 }
 
 void LauncherAccessibility::refresh() noexcept
 {
-    if (impl_ && impl_->state->connected) refreshSnapshot(impl_->state);
+    try {
+        if (impl_ && impl_->state->connected) refreshSnapshot(impl_->state);
+    }
+    catch (...) {
+        OutputDebugStringW(L"HLaunch UI Automation refresh failed.\n");
+    }
 }
 
 void LauncherAccessibility::disconnect() noexcept
 {
     if (!impl_) return;
-    impl_->state->connected = false;
-    impl_->state->callbacks.snapshot = {};
-    impl_->state->callbacks.invoke = {};
-    impl_->state->callbacks.focus = {};
+    {
+        const std::scoped_lock lock{impl_->state->callbacksMutex};
+        impl_->state->connected = false;
+        impl_->state->callbacks.window = nullptr;
+        impl_->state->callbacks.snapshot = {};
+        impl_->state->callbacks.invoke = {};
+        impl_->state->callbacks.focus = {};
+    }
     {
         const std::scoped_lock lock{impl_->state->snapshotMutex};
         impl_->state->cachedSnapshot.clear();

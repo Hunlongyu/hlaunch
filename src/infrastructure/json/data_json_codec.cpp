@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
-#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -361,21 +360,6 @@ std::string_view itemTypeToString(const core::ItemType value)
     return {};
 }
 
-std::optional<std::uint32_t> checkedMilliseconds(
-    const std::int64_t value,
-    std::string path,
-    std::vector<JsonIssue>& issues)
-{
-    if (value < 0 || value > static_cast<std::int64_t>(std::numeric_limits<std::uint32_t>::max())) {
-        issues.push_back(makeIssue(
-            JsonIssueCode::Validation,
-            std::move(path),
-            "millisecond value is outside uint32 range"));
-        return std::nullopt;
-    }
-    return static_cast<std::uint32_t>(value);
-}
-
 std::optional<core::ApplicationConfig> configFromDto(
     const ConfigDto& dto,
     std::vector<JsonIssue>& issues)
@@ -486,33 +470,10 @@ std::optional<core::ApplicationConfig> configFromDto(
             "unknown screen edge mode"));
     }
 
-    edge.thicknessDip = dto.activation.screenEdge.thicknessDip;
-    edge.cornerSizeDip = dto.activation.screenEdge.cornerSizeDip;
     edge.disableOnFullscreen = dto.activation.screenEdge.disableOnFullscreen;
     edge.foregroundProcessBlocklist = dto.activation.screenEdge.foregroundProcessBlocklist;
     edge.foregroundProcessAllowlist = dto.activation.screenEdge.foregroundProcessAllowlist;
 
-    const auto dwell = checkedMilliseconds(
-        dto.activation.screenEdge.dwellMs,
-        "$.activation.screenEdge.dwellMs",
-        issues);
-    const auto poll = checkedMilliseconds(
-        dto.activation.screenEdge.pollMs,
-        "$.activation.screenEdge.pollMs",
-        issues);
-    const auto cooldown = checkedMilliseconds(
-        dto.activation.screenEdge.cooldownMs,
-        "$.activation.screenEdge.cooldownMs",
-        issues);
-    if (dwell) {
-        edge.dwellMs = *dwell;
-    }
-    if (poll) {
-        edge.pollMs = *poll;
-    }
-    if (cooldown) {
-        edge.cooldownMs = *cooldown;
-    }
     config.diagnostics.loggingEnabled = dto.diagnostics.loggingEnabled.value_or(true);
 
     appendIssues(issues, convertIssues(core::validateConfig(config)));
@@ -555,11 +516,13 @@ ConfigDto configToDto(const core::ApplicationConfig& config)
     dto.activation.screenEdge.edgeMode = edge.edgeMode == core::ScreenEdgeMode::DesktopOuter
         ? "desktopOuter"
         : "everyMonitor";
-    dto.activation.screenEdge.thicknessDip = edge.thicknessDip;
-    dto.activation.screenEdge.cornerSizeDip = edge.cornerSizeDip;
-    dto.activation.screenEdge.dwellMs = edge.dwellMs;
-    dto.activation.screenEdge.pollMs = edge.pollMs;
-    dto.activation.screenEdge.cooldownMs = edge.cooldownMs;
+    // Keep writing the v1 fields for downgrade compatibility. They are fixed
+    // implementation details now and are deliberately ignored while reading.
+    dto.activation.screenEdge.thicknessDip = core::defaultScreenEdgeThicknessDip;
+    dto.activation.screenEdge.cornerSizeDip = core::defaultScreenEdgeCornerSizeDip;
+    dto.activation.screenEdge.dwellMs = core::defaultScreenEdgeDwellMs;
+    dto.activation.screenEdge.pollMs = core::defaultScreenEdgePollMs;
+    dto.activation.screenEdge.cooldownMs = core::defaultScreenEdgeCooldownMs;
     dto.activation.screenEdge.disableOnFullscreen = edge.disableOnFullscreen;
     dto.activation.screenEdge.foregroundProcessBlocklist = edge.foregroundProcessBlocklist;
     dto.activation.screenEdge.foregroundProcessAllowlist = edge.foregroundProcessAllowlist;

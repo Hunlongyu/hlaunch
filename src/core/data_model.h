@@ -57,6 +57,12 @@ enum class ScreenEdgeMode {
     EveryMonitor,
 };
 
+inline constexpr double defaultScreenEdgeThicknessDip = 4.0;
+inline constexpr double defaultScreenEdgeCornerSizeDip = 16.0;
+inline constexpr std::uint32_t defaultScreenEdgeDwellMs = 180;
+inline constexpr std::uint32_t defaultScreenEdgePollMs = 30;
+inline constexpr std::uint32_t defaultScreenEdgeCooldownMs = 100;
+
 struct HotkeyConfig {
     bool enabled{true};
     std::vector<HotkeyModifier> modifiers{HotkeyModifier::Alt};
@@ -70,11 +76,11 @@ struct ScreenEdgeConfig {
     bool enabled{false};
     std::vector<ScreenEdgeZone> zones{ScreenEdgeZone::Left};
     ScreenEdgeMode edgeMode{ScreenEdgeMode::DesktopOuter};
-    double thicknessDip{4.0};
-    double cornerSizeDip{16.0};
-    std::uint32_t dwellMs{300};
-    std::uint32_t pollMs{40};
-    std::uint32_t cooldownMs{500};
+    double thicknessDip{defaultScreenEdgeThicknessDip};
+    double cornerSizeDip{defaultScreenEdgeCornerSizeDip};
+    std::uint32_t dwellMs{defaultScreenEdgeDwellMs};
+    std::uint32_t pollMs{defaultScreenEdgePollMs};
+    std::uint32_t cooldownMs{defaultScreenEdgeCooldownMs};
     bool disableOnFullscreen{true};
     std::vector<std::string> foregroundProcessBlocklist{};
     std::vector<std::string> foregroundProcessAllowlist{};

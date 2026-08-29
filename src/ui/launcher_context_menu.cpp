@@ -27,7 +27,7 @@ wil::unique_hmenu createLauncherContextMenu(const bool pinned)
                    L"添加页面...")
         || !append(menu.get(), MF_STRING,
                    static_cast<UINT_PTR>(LauncherContextCommand::Settings),
-                   L"选项...\tCtrl+O")
+                   L"设置...\tCtrl+O")
         || !append(menu.get(), MF_SEPARATOR, 0, nullptr)
         || !append(menu.get(), MF_STRING,
                    static_cast<UINT_PTR>(LauncherContextCommand::Exit),

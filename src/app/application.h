@@ -46,6 +46,7 @@ private:
     [[nodiscard]] bool applyDiagnosticLogging(bool enabled);
     [[nodiscard]] bool submitConfigSnapshot(core::ApplicationConfig snapshot);
     void handleConfigSaveCompletions();
+    void shutdownSaveWorkersForSessionEnd() noexcept;
 
     HINSTANCE instance_{};
     core::ApplicationConfig config_{};

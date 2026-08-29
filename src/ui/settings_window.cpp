@@ -6,20 +6,16 @@
 #include <CommCtrl.h>
 
 #include <algorithm>
-#include <cmath>
-#include <cwchar>
-#include <iomanip>
 #include <limits>
 #include <optional>
 #include <ranges>
-#include <sstream>
 #include <utility>
 
 namespace hlaunch::ui {
 namespace {
 
-constexpr int settingsWidth = 620;
-constexpr int settingsHeight = 610;
+constexpr int settingsWidth = 560;
+constexpr int settingsHeight = 590;
 constexpr int compactEditHeightDip = 22;
 constexpr int compactComboSelectionHeightDip = 16;
 constexpr int idTab = 2000;
@@ -45,11 +41,6 @@ constexpr int idEdgeTopRight = 2024;
 constexpr int idEdgeBottomLeft = 2025;
 constexpr int idEdgeBottomRight = 2026;
 constexpr int idEdgeMode = 2027;
-constexpr int idEdgeThickness = 2028;
-constexpr int idEdgeCornerSize = 2029;
-constexpr int idEdgeDwell = 2030;
-constexpr int idEdgePoll = 2031;
-constexpr int idEdgeCooldown = 2032;
 constexpr int idProcessBlocklist = 2033;
 constexpr int idProcessAllowlist = 2034;
 constexpr int idStartupEnabled = 2040;
@@ -71,16 +62,6 @@ std::string narrowAscii(const std::wstring_view value)
     return result;
 }
 
-std::optional<double> readDouble(const HWND control)
-{
-    wchar_t buffer[32]{};
-    GetWindowTextW(control, buffer, static_cast<int>(std::size(buffer)));
-    wchar_t* end{};
-    const auto value = std::wcstod(buffer, &end);
-    if (buffer[0] == L'\0' || !end || *end != L'\0' || !std::isfinite(value)) return std::nullopt;
-    return value;
-}
-
 std::optional<std::uint32_t> readUnsigned(const HWND control)
 {
     wchar_t buffer[32]{};
@@ -90,13 +71,6 @@ std::optional<std::uint32_t> readUnsigned(const HWND control)
     if (buffer[0] == L'\0' || !end || *end != L'\0'
         || value > std::numeric_limits<std::uint32_t>::max()) return std::nullopt;
     return static_cast<std::uint32_t>(value);
-}
-
-std::wstring formatDecimal(const double value)
-{
-    std::wostringstream stream{};
-    stream << std::setprecision(4) << value;
-    return stream.str();
 }
 
 std::wstring readText(const HWND control)
@@ -215,7 +189,7 @@ std::wstring formatProcessList(const std::vector<std::string>& names)
             continue;
         }
         if (!result.empty()) {
-            result += L"; ";
+            result += L"\r\n";
         }
         result += *widened;
     }
@@ -350,7 +324,7 @@ INT_PTR SettingsWindow::handleMessage(
 {
     switch (message) {
     case WM_INITDIALOG: {
-        SetWindowTextW(window_, L"HLaunch 选项");
+        SetWindowTextW(window_, L"HLaunch 设置");
         const UINT initialDpi = GetDpiForWindow(window_);
         RECT windowBounds{
             0, 0, scaleDip(settingsWidth, initialDpi), scaleDip(settingsHeight, initialDpi)};
@@ -378,6 +352,11 @@ INT_PTR SettingsWindow::handleMessage(
         return TRUE;
     }
     case WM_COMMAND:
+        if (LOWORD(wParam) == idHotkeyKey && HIWORD(wParam) == CBN_DROPDOWN) {
+            SendMessageW(hotkeyKeyCombo_, CB_SETTOPINDEX, 0, 0);
+            PostMessageW(hotkeyKeyCombo_, CB_SETTOPINDEX, 0, 0);
+            return TRUE;
+        }
         if ((LOWORD(wParam) == idHotkeyEnabled || LOWORD(wParam) == idScreenEdgeEnabled)
             && HIWORD(wParam) == BN_CLICKED) {
             updateActivationEnabledState();
@@ -529,7 +508,7 @@ void SettingsWindow::createControls()
     };
 
     tabControl_ = add(
-        WC_TABCONTROLW, L"", WS_TABSTOP | WS_CLIPSIBLINGS, 12, 12, 596, 520, idTab);
+        WC_TABCONTROLW, L"", WS_TABSTOP | WS_CLIPSIBLINGS, 12, 12, 536, 520, idTab);
     TCITEMW tabItem{.mask = TCIF_TEXT};
     tabItem.pszText = const_cast<wchar_t*>(L"常规");
     SendMessageW(tabControl_, TCM_INSERTITEMW, 0, reinterpret_cast<LPARAM>(&tabItem));
@@ -551,7 +530,7 @@ void SettingsWindow::createControls()
         toDip(tabPageBounds.bottom - tabPageBounds.top), idTabPageBackground);
 
     addPage(generalPageControls_, L"BUTTON", L"主窗口", BS_GROUPBOX,
-            28, 50, 564, 150, 0);
+            28, 50, 504, 150, 0);
     addPage(generalPageControls_, L"STATIC", L"背景效果：", 0,
             48, 78, 70, 20, 0);
     backdropCombo_ = addPage(
@@ -573,41 +552,41 @@ void SettingsWindow::createControls()
             48, 118, 70, 20, 0);
     opacitySlider_ = addPage(
         generalPageControls_, TRACKBAR_CLASSW, L"",
-        TBS_HORZ | TBS_AUTOTICKS | WS_TABSTOP, 118, 108, 324, 36, idOpacitySlider);
+        TBS_HORZ | TBS_AUTOTICKS | WS_TABSTOP, 118, 108, 264, 36, idOpacitySlider);
     SendMessageW(opacitySlider_, TBM_SETRANGE, TRUE, MAKELPARAM(30, 100));
     SendMessageW(opacitySlider_, TBM_SETTICFREQ, 10, 0);
     SendMessageW(opacitySlider_, TBM_SETPAGESIZE, 0, 5);
     opacityEdit_ = addPage(
         generalPageControls_, L"EDIT", L"95",
-        WS_BORDER | WS_TABSTOP | ES_NUMBER | ES_RIGHT, 456, 114, 56,
+        WS_BORDER | WS_TABSTOP | ES_NUMBER | ES_RIGHT, 396, 114, 56,
         compactEditHeightDip, idOpacityEdit);
     SendMessageW(opacityEdit_, EM_SETLIMITTEXT, 3, 0);
-    addPage(generalPageControls_, L"STATIC", L"%", 0, 520, 118, 24, 20, 0);
+    addPage(generalPageControls_, L"STATIC", L"%", 0, 460, 118, 24, 20, 0);
     addPage(generalPageControls_, L"STATIC",
             L"背景效果与整体透明度同时作用于 Launcher 和搜索窗；不支持的效果会安全降级。",
-            0, 48, 152, 510, 34, 0);
+            0, 48, 152, 450, 34, 0);
 
     addPage(generalPageControls_, L"BUTTON", L"Windows 登录", BS_GROUPBOX,
-            28, 212, 564, 104, 0);
+            28, 212, 504, 104, 0);
     startupEnabledCheck_ = addPage(
         generalPageControls_, L"BUTTON", L"登录 Windows 时启动 HLaunch",
         BS_AUTOCHECKBOX | WS_TABSTOP, 48, 238, 260, 24, idStartupEnabled);
     startupStatusText_ = addPage(
         generalPageControls_, L"STATIC", L"仅修改当前用户启动项，不需要管理员权限。",
-        0, 48, 270, 510, 24, 0);
+        0, 48, 270, 450, 24, 0);
 
     addPage(generalPageControls_, L"BUTTON", L"诊断", BS_GROUPBOX,
-            28, 328, 564, 112, 0);
+            28, 328, 504, 112, 0);
     diagnosticLoggingEnabledCheck_ = addPage(
         generalPageControls_, L"BUTTON", L"启用诊断日志",
         BS_AUTOCHECKBOX | WS_TABSTOP, 48, 354, 220, 24, idDiagnosticLoggingEnabled);
     diagnosticsStatusText_ = addPage(
         generalPageControls_, L"STATIC",
         L"日志用于定位启动、快捷键和边缘唤起问题，不记录条目名称、目标、参数或搜索词。",
-        0, 48, 386, 510, 40, 0);
+        0, 48, 386, 450, 40, 0);
 
     addPage(activationPageControls_, L"BUTTON", L"全局快捷键", BS_GROUPBOX,
-            28, 50, 564, 98, 0);
+            28, 50, 504, 98, 0);
     hotkeyEnabledCheck_ = addPage(
         activationPageControls_, L"BUTTON", L"启用全局快捷键",
         BS_AUTOCHECKBOX | WS_TABSTOP, 48, 76, 170, 24, idHotkeyEnabled);
@@ -627,14 +606,15 @@ void SettingsWindow::createControls()
         BS_AUTOCHECKBOX | WS_TABSTOP, 304, 106, 58, 26, idHotkeyWin);
     hotkeyKeyCombo_ = addPage(
         activationPageControls_, L"COMBOBOX", L"",
-        CBS_DROPDOWNLIST | WS_TABSTOP, 378, 106, 112, 260, idHotkeyKey);
+        CBS_DROPDOWNLIST | CBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP,
+        378, 106, 112, 260, idHotkeyKey);
     compactCombo(hotkeyKeyCombo_);
     SendMessageW(hotkeyKeyCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Space"));
-    for (wchar_t key = L'A'; key <= L'Z'; ++key) {
+    for (wchar_t key = L'0'; key <= L'9'; ++key) {
         const wchar_t value[]{key, L'\0'};
         SendMessageW(hotkeyKeyCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(value));
     }
-    for (wchar_t key = L'0'; key <= L'9'; ++key) {
+    for (wchar_t key = L'A'; key <= L'Z'; ++key) {
         const wchar_t value[]{key, L'\0'};
         SendMessageW(hotkeyKeyCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(value));
     }
@@ -645,7 +625,7 @@ void SettingsWindow::createControls()
     }
 
     addPage(activationPageControls_, L"BUTTON", L"屏幕边缘", BS_GROUPBOX,
-            28, 160, 564, 342, 0);
+            28, 160, 504, 342, 0);
     screenEdgeEnabledCheck_ = addPage(
         activationPageControls_, L"BUTTON", L"启用屏幕边缘停留唤起",
         BS_AUTOCHECKBOX | WS_TABSTOP, 48, 186, 240, 24, idScreenEdgeEnabled);
@@ -677,71 +657,37 @@ void SettingsWindow::createControls()
     SendMessageW(edgeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"仅桌面外轮廓"));
     SendMessageW(edgeModeCombo_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"每台显示器边缘"));
 
-    addPage(activationPageControls_, L"STATIC", L"边缘宽度：", 0,
-            48, 290, 82, 20, 0);
-    thicknessEdit_ = addPage(activationPageControls_, L"EDIT", L"4",
-        WS_BORDER | WS_TABSTOP | ES_RIGHT, 130, 286, 54,
-        compactEditHeightDip, idEdgeThickness);
-    addPage(activationPageControls_, L"STATIC", L"DIP（2–16）", 0,
-            190, 290, 86, 20, 0);
-    addPage(activationPageControls_, L"STATIC", L"角落大小：", 0,
-            300, 290, 82, 20, 0);
-    cornerSizeEdit_ = addPage(activationPageControls_, L"EDIT", L"16",
-        WS_BORDER | WS_TABSTOP | ES_RIGHT, 382, 286, 54,
-        compactEditHeightDip, idEdgeCornerSize);
-    addPage(activationPageControls_, L"STATIC", L"DIP（8–64）", 0,
-            442, 290, 88, 20, 0);
-
-    addPage(activationPageControls_, L"STATIC", L"停留：", 0,
-            48, 324, 50, 20, 0);
-    dwellEdit_ = addPage(activationPageControls_, L"EDIT", L"300",
-        WS_BORDER | WS_TABSTOP | ES_NUMBER | ES_RIGHT, 98, 320, 58,
-        compactEditHeightDip, idEdgeDwell);
-    addPage(activationPageControls_, L"STATIC", L"ms", 0, 162, 324, 24, 20, 0);
-    addPage(activationPageControls_, L"STATIC", L"采样：", 0,
-            204, 324, 50, 20, 0);
-    pollEdit_ = addPage(activationPageControls_, L"EDIT", L"40",
-        WS_BORDER | WS_TABSTOP | ES_NUMBER | ES_RIGHT, 254, 320, 52,
-        compactEditHeightDip, idEdgePoll);
-    addPage(activationPageControls_, L"STATIC", L"ms", 0, 312, 324, 24, 20, 0);
-    addPage(activationPageControls_, L"STATIC", L"冷却：", 0,
-            354, 324, 50, 20, 0);
-    cooldownEdit_ = addPage(activationPageControls_, L"EDIT", L"500",
-        WS_BORDER | WS_TABSTOP | ES_NUMBER | ES_RIGHT, 404, 320, 58,
-        compactEditHeightDip, idEdgeCooldown);
-    addPage(activationPageControls_, L"STATIC", L"ms", 0, 468, 324, 24, 20, 0);
-
     fullscreenCheck_ = addPage(
         activationPageControls_, L"BUTTON", L"全屏应用运行时禁用边缘唤起",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 48, 352, 280, 24, idFullscreenSuppression);
+        BS_AUTOCHECKBOX | WS_TABSTOP, 48, 290, 280, 24, idFullscreenSuppression);
     addPage(activationPageControls_, L"STATIC", L"进程黑名单：", 0,
-            48, 392, 94, 20, 0);
+            48, 328, 94, 20, 0);
     processBlocklistEdit_ = addPage(
         activationPageControls_, L"EDIT", L"",
-        WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 142, 388, 416,
-        compactEditHeightDip, idProcessBlocklist);
+        WS_BORDER | WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
+        142, 322, 356, 58, idProcessBlocklist);
     addPage(activationPageControls_, L"STATIC", L"进程白名单：", 0,
-            48, 426, 94, 20, 0);
+            48, 394, 94, 20, 0);
     processAllowlistEdit_ = addPage(
         activationPageControls_, L"EDIT", L"",
-        WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 142, 422, 416,
-        compactEditHeightDip, idProcessAllowlist);
+        WS_BORDER | WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
+        142, 388, 356, 58, idProcessAllowlist);
     SendMessageW(processBlocklistEdit_, EM_SETLIMITTEXT, 4096, 0);
     SendMessageW(processAllowlistEdit_, EM_SETLIMITTEXT, 4096, 0);
     activationStatusText_ = addPage(
         activationPageControls_, L"STATIC",
-        L"名单使用分号分隔；白名单非空时仅允许名单内进程，并优先于黑名单。",
-        0, 48, 458, 510, 34, 0);
+        L"每行填写一个进程名；也兼容逗号或分号。白名单非空时优先于黑名单。",
+        0, 48, 458, 450, 34, 0);
 
     settingsStatusText_ = add(
         L"STATIC", L"修改后选择“应用”或“确定”保存设置。",
-        0, 18, 552, 304, 24, 0);
+        0, 18, 552, 244, 24, 0);
     add(L"BUTTON", L"确定", WS_TABSTOP | BS_DEFPUSHBUTTON,
-        350, 544, 78, 30, IDOK);
+        290, 544, 78, 30, IDOK);
     add(L"BUTTON", L"取消", WS_TABSTOP | BS_PUSHBUTTON,
-        438, 544, 78, 30, IDCANCEL);
+        378, 544, 78, 30, IDCANCEL);
     add(L"BUTTON", L"应用", WS_TABSTOP | BS_PUSHBUTTON,
-        526, 544, 78, 30, idApplyAll);
+        466, 544, 78, 30, idApplyAll);
 
     syncAppearanceControls();
     syncActivationControls();
@@ -837,6 +783,11 @@ bool SettingsWindow::applyActivationFromControls()
     requested.screenEdge.edgeMode = SendMessageW(edgeModeCombo_, CB_GETCURSEL, 0, 0) == 1
                                         ? core::ScreenEdgeMode::EveryMonitor
                                         : core::ScreenEdgeMode::DesktopOuter;
+    requested.screenEdge.thicknessDip = core::defaultScreenEdgeThicknessDip;
+    requested.screenEdge.cornerSizeDip = core::defaultScreenEdgeCornerSizeDip;
+    requested.screenEdge.dwellMs = core::defaultScreenEdgeDwellMs;
+    requested.screenEdge.pollMs = core::defaultScreenEdgePollMs;
+    requested.screenEdge.cooldownMs = core::defaultScreenEdgeCooldownMs;
     const auto rejectField = [this](const HWND field, const wchar_t* message) {
         SendMessageW(tabControl_, TCM_SETCURSEL, 1, 0);
         updateVisiblePage();
@@ -847,26 +798,6 @@ bool SettingsWindow::applyActivationFromControls()
         SendMessageW(field, EM_SETSEL, 0, -1);
         return false;
     };
-    const auto thickness = readDouble(thicknessEdit_);
-    if (!thickness || *thickness < 2.0 || *thickness > 16.0)
-        return rejectField(thicknessEdit_, L"边缘宽度必须是 2 到 16 DIP。");
-    requested.screenEdge.thicknessDip = *thickness;
-    const auto cornerSize = readDouble(cornerSizeEdit_);
-    if (!cornerSize || *cornerSize < 8.0 || *cornerSize > 64.0)
-        return rejectField(cornerSizeEdit_, L"角落大小必须是 8 到 64 DIP。");
-    requested.screenEdge.cornerSizeDip = *cornerSize;
-    const auto dwell = readUnsigned(dwellEdit_);
-    if (!dwell || *dwell < 100 || *dwell > 1'000)
-        return rejectField(dwellEdit_, L"停留时间必须是 100 到 1000 毫秒。");
-    requested.screenEdge.dwellMs = *dwell;
-    const auto poll = readUnsigned(pollEdit_);
-    if (!poll || *poll < 30 || *poll > 50)
-        return rejectField(pollEdit_, L"采样间隔必须是 30 到 50 毫秒。");
-    requested.screenEdge.pollMs = *poll;
-    const auto cooldown = readUnsigned(cooldownEdit_);
-    if (!cooldown || *cooldown > 5'000)
-        return rejectField(cooldownEdit_, L"冷却时间必须是 0 到 5000 毫秒。");
-    requested.screenEdge.cooldownMs = *cooldown;
     const auto blocklist = parseProcessList(processBlocklistEdit_);
     if (!blocklist) {
         return rejectField(processBlocklistEdit_, blocklist.error().c_str());
@@ -1018,11 +949,6 @@ void SettingsWindow::syncActivationControls()
     syncZone(idEdgeBottomRight, core::ScreenEdgeZone::BottomRight);
     SendMessageW(edgeModeCombo_, CB_SETCURSEL,
                  activation_.screenEdge.edgeMode == core::ScreenEdgeMode::EveryMonitor ? 1 : 0, 0);
-    SetWindowTextW(thicknessEdit_, formatDecimal(activation_.screenEdge.thicknessDip).c_str());
-    SetWindowTextW(cornerSizeEdit_, formatDecimal(activation_.screenEdge.cornerSizeDip).c_str());
-    SetWindowTextW(dwellEdit_, std::to_wstring(activation_.screenEdge.dwellMs).c_str());
-    SetWindowTextW(pollEdit_, std::to_wstring(activation_.screenEdge.pollMs).c_str());
-    SetWindowTextW(cooldownEdit_, std::to_wstring(activation_.screenEdge.cooldownMs).c_str());
     CheckDlgButton(window_, idFullscreenSuppression,
                    activation_.screenEdge.disableOnFullscreen ? BST_CHECKED : BST_UNCHECKED);
     SetWindowTextW(
@@ -1062,8 +988,7 @@ void SettingsWindow::updateActivationEnabledState()
     const BOOL edgeEnabled = IsDlgButtonChecked(window_, idScreenEdgeEnabled) == BST_CHECKED;
     for (const auto control : {leftZoneCheck_, rightZoneCheck_, topZoneCheck_, bottomZoneCheck_,
                                topLeftZoneCheck_, topRightZoneCheck_, bottomLeftZoneCheck_,
-                               bottomRightZoneCheck_, edgeModeCombo_, thicknessEdit_, cornerSizeEdit_,
-                               dwellEdit_, pollEdit_, cooldownEdit_, fullscreenCheck_,
+                               bottomRightZoneCheck_, edgeModeCombo_, fullscreenCheck_,
                                processBlocklistEdit_, processAllowlistEdit_})
         EnableWindow(control, edgeEnabled);
     RedrawWindow(window_, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);

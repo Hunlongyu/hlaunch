@@ -51,6 +51,7 @@ struct LauncherMetrics {
     bool showItemText{true};
     float titleFontSize{13.0F};
     float chromeIconSize{14.0F};
+    float pinIconSize{12.0F};
     float headerVisualOffsetY{-1.0F};
     float chromeCornerRadius{4.0F};
     float chromeButtonGap{4.0F};

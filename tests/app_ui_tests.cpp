@@ -192,6 +192,42 @@ TEST_CASE("PROD-GRID-001 pin button toggles topmost state")
     clearPendingQuitMessages();
 }
 
+TEST_CASE("PROD-GRID-001 pinned launcher stays visible after a successful item launch")
+{
+    clearPendingQuitMessages();
+    hlaunch::ui::LauncherWindow launcher{};
+    REQUIRE(launcher.create(
+        GetModuleHandleW(nullptr), {}, false, {},
+        [](const hlaunch::core::LaunchItem&) {}));
+
+    launcher.show();
+    REQUIRE(launcher.isVisible());
+    launcher.hideAfterSuccessfulLaunchIfNeeded();
+    CHECK_FALSE(launcher.isVisible());
+
+    launcher.show();
+    const auto layout = launcherLayoutFor(launcher.handle(), 0U);
+    const auto pinPoint = centerInPixels(launcher.handle(), layout.pinButton);
+    SendMessageW(
+        launcher.handle(), WM_LBUTTONUP, 0, MAKELPARAM(pinPoint.x, pinPoint.y));
+    REQUIRE((GetWindowLongPtrW(launcher.handle(), GWL_EXSTYLE) & WS_EX_TOPMOST) != 0);
+
+    launcher.hideAfterSuccessfulLaunchIfNeeded();
+    CHECK(launcher.isVisible());
+
+    SendMessageW(launcher.handle(), WM_KEYDOWN, VK_ESCAPE, 0);
+    CHECK_FALSE(launcher.isVisible());
+
+    launcher.show();
+    REQUIRE(launcher.isVisible());
+    REQUIRE((GetWindowLongPtrW(launcher.handle(), GWL_EXSTYLE) & WS_EX_TOPMOST) != 0);
+    SendMessageW(launcher.handle(), WM_CLOSE, 0, 0);
+    CHECK_FALSE(launcher.isVisible());
+
+    launcher.close();
+    clearPendingQuitMessages();
+}
+
 TEST_CASE("PROD-GRID-001 launcher chrome empty slots and tabs expose separate "
           "menus")
 {
@@ -207,6 +243,11 @@ TEST_CASE("PROD-GRID-001 launcher chrome empty slots and tabs expose separate "
     CHECK(std::wstring_view{pinLabel.data()}.starts_with(L"置顶窗口"));
     CHECK(GetMenuItemID(launcher.get(), 4) ==
           static_cast<UINT>(hlaunch::ui::LauncherContextCommand::Settings));
+    std::array<wchar_t, 64> settingsLabel{};
+    REQUIRE(GetMenuStringW(
+        launcher.get(), 4, settingsLabel.data(), static_cast<int>(settingsLabel.size()),
+        MF_BYPOSITION) > 0);
+    CHECK(std::wstring_view{settingsLabel.data()} == L"设置...\tCtrl+O");
 
     const auto emptySlot = hlaunch::ui::createEmptySlotContextMenu();
     REQUIRE(emptySlot);
@@ -284,13 +325,19 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
 {
     auto selectedAppearance = hlaunch::core::AppearanceConfig{};
     auto selectedActivation = hlaunch::core::ActivationConfig{};
+    auto legacyActivation = hlaunch::core::ActivationConfig{};
+    legacyActivation.screenEdge.thicknessDip = 12.0;
+    legacyActivation.screenEdge.cornerSizeDip = 48.0;
+    legacyActivation.screenEdge.dwellMs = 900;
+    legacyActivation.screenEdge.pollMs = 50;
+    legacyActivation.screenEdge.cooldownMs = 4'000;
     bool selectedStartup{};
     bool selectedDiagnostics{true};
     hlaunch::ui::SettingsWindow settings{};
 
     REQUIRE(settings.show(
         GetModuleHandleW(nullptr), nullptr, hlaunch::core::AppearanceConfig{},
-        hlaunch::core::ActivationConfig{}, false, true,
+        legacyActivation, false, true,
         [&selectedAppearance](const hlaunch::core::AppearanceConfig& appearance) {
             selectedAppearance = appearance;
             return true;
@@ -308,6 +355,9 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
             selectedDiagnostics = enabled;
             return {};
         }));
+    wchar_t settingsTitle[64]{};
+    GetWindowTextW(settings.handle(), settingsTitle, static_cast<int>(std::size(settingsTitle)));
+    CHECK(std::wstring_view{settingsTitle} == L"HLaunch 设置");
     REQUIRE(settings.handle() != nullptr);
     CHECK(settings.isVisible());
     const auto initialWindow = settings.handle();
@@ -321,22 +371,25 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
     const auto controlCheck = GetDlgItem(settings.handle(), 2012);
     const auto startupEnabled = GetDlgItem(settings.handle(), 2040);
     const auto diagnosticLoggingEnabled = GetDlgItem(settings.handle(), 2050);
-    const auto thicknessEdit = GetDlgItem(settings.handle(), 2028);
     const auto processBlocklist = GetDlgItem(settings.handle(), 2033);
     const auto processAllowlist = GetDlgItem(settings.handle(), 2034);
+    const auto bottomRightZone = GetDlgItem(settings.handle(), 2026);
     REQUIRE(hotkeyKey != nullptr);
     REQUIRE(controlCheck != nullptr);
     REQUIRE(startupEnabled != nullptr);
     REQUIRE(diagnosticLoggingEnabled != nullptr);
-    REQUIRE(thicknessEdit != nullptr);
     REQUIRE(processBlocklist != nullptr);
     REQUIRE(processAllowlist != nullptr);
+    REQUIRE(bottomRightZone != nullptr);
     REQUIRE(tab != nullptr);
     REQUIRE(tabPageBackground != nullptr);
     REQUIRE(backdropCombo != nullptr);
     REQUIRE(opacitySlider != nullptr);
     REQUIRE(opacityEdit != nullptr);
     REQUIRE(GetDlgItem(settings.handle(), 2003) != nullptr);
+    for (const int removedControlId : {2028, 2029, 2030, 2031, 2032}) {
+        CHECK(GetDlgItem(settings.handle(), removedControlId) == nullptr);
+    }
     const auto findChildByText = [&settings](const std::wstring_view expected) {
         struct Context {
             std::wstring_view expected;
@@ -358,8 +411,10 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
         return context.match;
     };
     const auto backdropLabel = findChildByText(L"背景效果：");
+    const auto screenEdgeGroup = findChildByText(L"屏幕边缘");
     const auto settingsStatus = findChildByText(L"修改后选择“应用”或“确定”保存设置。");
     REQUIRE(backdropLabel != nullptr);
+    REQUIRE(screenEdgeGroup != nullptr);
     REQUIRE(settingsStatus != nullptr);
     CHECK((GetWindowLongPtrW(backdropLabel, GWL_EXSTYLE) & WS_EX_TRANSPARENT) != 0);
     CHECK((GetWindowLongPtrW(diagnosticLoggingEnabled, GWL_EXSTYLE)
@@ -410,14 +465,48 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
     CHECK(reinterpret_cast<HBRUSH>(SendMessageW(settings.handle(), WM_CTLCOLORDLG, 0, 0))
           == GetSysColorBrush(COLOR_BTNFACE));
     RECT compactEditBounds{};
-    REQUIRE(GetWindowRect(thicknessEdit, &compactEditBounds));
+    REQUIRE(GetWindowRect(opacityEdit, &compactEditBounds));
     CHECK(compactEditBounds.bottom - compactEditBounds.top
           == MulDiv(22, static_cast<int>(GetDpiForWindow(settings.handle())), 96));
     const auto comboSelectionHeight =
         SendMessageW(hotkeyKey, CB_GETITEMHEIGHT, static_cast<WPARAM>(-1), 0);
     const auto settingsDpi = static_cast<int>(GetDpiForWindow(settings.handle()));
+    RECT settingsClient{};
+    REQUIRE(GetClientRect(settings.handle(), &settingsClient));
+    CHECK(settingsClient.right - settingsClient.left == MulDiv(560, settingsDpi, 96));
+    CHECK(settingsClient.bottom - settingsClient.top == MulDiv(590, settingsDpi, 96));
+    RECT screenEdgeGroupBounds{};
+    RECT bottomRightZoneBounds{};
+    REQUIRE(GetWindowRect(screenEdgeGroup, &screenEdgeGroupBounds));
+    REQUIRE(GetWindowRect(bottomRightZone, &bottomRightZoneBounds));
+    CHECK(bottomRightZoneBounds.right
+          <= screenEdgeGroupBounds.right - MulDiv(12, settingsDpi, 96));
     CHECK(comboSelectionHeight >= MulDiv(16, settingsDpi, 96));
     CHECK(comboSelectionHeight <= MulDiv(20, settingsDpi, 96));
+    CHECK(SendMessageW(hotkeyKey, CB_GETCOUNT, 0, 0) == 60);
+    CHECK(SendMessageW(
+              hotkeyKey, CB_FINDSTRINGEXACT, static_cast<WPARAM>(-1),
+              reinterpret_cast<LPARAM>(L"Space"))
+          == 0);
+    CHECK(SendMessageW(
+              hotkeyKey, CB_FINDSTRINGEXACT, static_cast<WPARAM>(-1),
+              reinterpret_cast<LPARAM>(L"0"))
+          == 1);
+    CHECK(SendMessageW(
+              hotkeyKey, CB_FINDSTRINGEXACT, static_cast<WPARAM>(-1),
+              reinterpret_cast<LPARAM>(L"9"))
+          == 10);
+    RECT hotkeyDroppedBounds{};
+    REQUIRE(SendMessageW(
+        hotkeyKey, CB_GETDROPPEDCONTROLRECT, 0,
+        reinterpret_cast<LPARAM>(&hotkeyDroppedBounds)));
+    CHECK(hotkeyDroppedBounds.bottom - hotkeyDroppedBounds.top
+          >= comboSelectionHeight * 11);
+    SendMessageW(hotkeyKey, CB_SETTOPINDEX, 12, 0);
+    SendMessageW(
+        settings.handle(), WM_COMMAND, MAKEWPARAM(2015, CBN_DROPDOWN),
+        reinterpret_cast<LPARAM>(hotkeyKey));
+    CHECK(SendMessageW(hotkeyKey, CB_GETTOPINDEX, 0, 0) == 0);
     CHECK(SendMessageW(tab, TCM_GETITEMCOUNT, 0, 0) == 2);
     CHECK(SendMessageW(backdropCombo, CB_GETCOUNT, 0, 0) == 4);
     const auto initialBackdrop = SendMessageW(backdropCombo, CB_GETCURSEL, 0, 0);
@@ -468,8 +557,38 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
     SendMessageW(settings.handle(), WM_NOTIFY, 2000,
                  reinterpret_cast<LPARAM>(&selectedTab));
     CHECK(IsWindowVisible(hotkeyKey));
+    SendMessageW(hotkeyKey, CB_SHOWDROPDOWN, TRUE, 0);
+    CHECK(SendMessageW(hotkeyKey, CB_GETDROPPEDSTATE, 0, 0) != FALSE);
+    COMBOBOXINFO hotkeyComboInfo{.cbSize = sizeof(COMBOBOXINFO)};
+    REQUIRE(GetComboBoxInfo(hotkeyKey, &hotkeyComboInfo));
+    REQUIRE(hotkeyComboInfo.hwndList != nullptr);
+    CHECK((GetWindowLongPtrW(hotkeyComboInfo.hwndList, GWL_STYLE) & WS_VSCROLL) != 0);
+    SendMessageW(hotkeyKey, CB_SETTOPINDEX, 0, 0);
+    SendMessageW(
+        hotkeyComboInfo.hwndList, WM_MOUSEWHEEL,
+        MAKEWPARAM(0, static_cast<WORD>(-WHEEL_DELTA)), 0);
+    CHECK(SendMessageW(hotkeyKey, CB_GETTOPINDEX, 0, 0) > 0);
+    SendMessageW(hotkeyKey, CB_SETTOPINDEX, 20, 0);
+    CHECK(SendMessageW(hotkeyKey, CB_GETTOPINDEX, 0, 0) == 20);
+    SendMessageW(
+        settings.handle(), WM_COMMAND, MAKEWPARAM(2015, CBN_DROPDOWN),
+        reinterpret_cast<LPARAM>(hotkeyKey));
+    CHECK(SendMessageW(hotkeyKey, CB_GETTOPINDEX, 0, 0) == 0);
+    SendMessageW(hotkeyKey, CB_SHOWDROPDOWN, FALSE, 0);
     CHECK_FALSE(IsWindowVisible(backdropCombo));
     CHECK_FALSE(IsWindowVisible(opacityEdit));
+    const auto processBlocklistStyle = GetWindowLongPtrW(processBlocklist, GWL_STYLE);
+    const auto processAllowlistStyle = GetWindowLongPtrW(processAllowlist, GWL_STYLE);
+    CHECK((processBlocklistStyle & ES_MULTILINE) != 0);
+    CHECK((processBlocklistStyle & ES_AUTOVSCROLL) != 0);
+    CHECK((processBlocklistStyle & ES_WANTRETURN) != 0);
+    CHECK((processBlocklistStyle & WS_VSCROLL) != 0);
+    CHECK((processAllowlistStyle & ES_MULTILINE) != 0);
+    CHECK((processAllowlistStyle & WS_VSCROLL) != 0);
+    RECT processBlocklistBounds{};
+    REQUIRE(GetWindowRect(processBlocklist, &processBlocklistBounds));
+    CHECK(processBlocklistBounds.bottom - processBlocklistBounds.top
+          == MulDiv(58, settingsDpi, 96));
     fit = controlsFitClient();
     INFO(fit.firstOutId);
     INFO(fit.firstOutBounds.left);
@@ -494,8 +613,8 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
                                    reinterpret_cast<LPARAM>(L"B"));
     REQUIRE(keyB != CB_ERR);
     SendMessageW(hotkeyKey, CB_SETCURSEL, keyB, 0);
-    SetWindowTextW(processBlocklist, L"Game, MSTSC.exe; game.exe");
-    SetWindowTextW(processAllowlist, L"mstsc");
+    SetWindowTextW(processBlocklist, L"Game\r\nMSTSC.exe; game.exe");
+    SetWindowTextW(processAllowlist, L"mstsc\r\nexplorer.exe");
     CheckDlgButton(settings.handle(), 2040, BST_CHECKED);
     CheckDlgButton(settings.handle(), 2050, BST_UNCHECKED);
     SendMessageW(settings.handle(), WM_COMMAND, MAKEWPARAM(2003, BN_CLICKED), 0);
@@ -507,7 +626,17 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
     CHECK(selectedActivation.screenEdge.foregroundProcessBlocklist
           == std::vector<std::string>{"game.exe", "mstsc.exe"});
     CHECK(selectedActivation.screenEdge.foregroundProcessAllowlist
-          == std::vector<std::string>{"mstsc.exe"});
+          == std::vector<std::string>{"mstsc.exe", "explorer.exe"});
+    CHECK(selectedActivation.screenEdge.thicknessDip
+          == doctest::Approx(hlaunch::core::defaultScreenEdgeThicknessDip));
+    CHECK(selectedActivation.screenEdge.cornerSizeDip
+          == doctest::Approx(hlaunch::core::defaultScreenEdgeCornerSizeDip));
+    CHECK(selectedActivation.screenEdge.dwellMs
+          == hlaunch::core::defaultScreenEdgeDwellMs);
+    CHECK(selectedActivation.screenEdge.pollMs
+          == hlaunch::core::defaultScreenEdgePollMs);
+    CHECK(selectedActivation.screenEdge.cooldownMs
+          == hlaunch::core::defaultScreenEdgeCooldownMs);
 
     CHECK(selectedStartup);
     CHECK_FALSE(selectedDiagnostics);
@@ -535,6 +664,11 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
             return {};
         }));
     CHECK(settings.handle() == initialWindow);
+    wchar_t formattedBlocklist[128]{};
+    GetWindowTextW(
+        processBlocklist, formattedBlocklist, static_cast<int>(std::size(formattedBlocklist)));
+    CHECK(std::wstring_view{formattedBlocklist} == L"game.exe\r\nmstsc.exe");
+    CHECK(SendMessageW(processBlocklist, EM_GETLINECOUNT, 0, 0) == 2);
     settings.hide();
 }
 
@@ -599,6 +733,10 @@ TEST_CASE("UI-STYLE-001 title buttons use icon-only hover and pinned tones")
     using hlaunch::ui::LauncherChromeIcon;
     using hlaunch::ui::LauncherChromeIconTone;
     using hlaunch::ui::launcherChromeIconTone;
+
+    const hlaunch::ui::LauncherMetrics metrics{};
+    CHECK(metrics.pinIconSize == doctest::Approx(12.0F));
+    CHECK(metrics.pinIconSize < metrics.chromeIconSize);
 
     CHECK(launcherChromeIconTone(LauncherChromeIcon::Menu, false, false)
           == LauncherChromeIconTone::Muted);

@@ -17,6 +17,7 @@
 #include <mutex>
 #include <optional>
 #include <ranges>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -211,6 +212,33 @@ TEST_CASE("UI-ICON-001 background loader preserves request identity")
     CHECK(completed->itemId == "async-item");
     CHECK(completed->sourceKey == "async-source");
     CHECK(completed->requestedPixelSize == 32U);
+}
+
+TEST_CASE("UI-ICON-001 a throwing completion callback cannot terminate the loader")
+{
+    std::mutex mutex{};
+    std::condition_variable condition{};
+    bool callbackReached{};
+    hlaunch::platform::windows::IconLoader loader{
+        [&](hlaunch::platform::windows::IconLoadResult) {
+            {
+                const std::scoped_lock lock{mutex};
+                callbackReached = true;
+            }
+            condition.notify_one();
+            throw std::runtime_error{"test completion failure"};
+        }};
+
+    loader.submit({
+        .itemId = "throwing-callback-item",
+        .sourceKey = "throwing-callback-source",
+        .target = currentExecutableUtf8(),
+        .pixelSize = 32,
+    });
+
+    std::unique_lock lock{mutex};
+    REQUIRE(condition.wait_for(
+        lock, std::chrono::seconds{5}, [&] { return callbackReached; }));
 }
 
 TEST_CASE("UI-ICON-001 disk cache survives reload and repairs corrupt entries")

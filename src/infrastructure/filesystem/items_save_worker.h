@@ -26,7 +26,7 @@ class ItemsSaveWorker final
     void submit(core::ItemsDocument snapshot);
 
   private:
-    void run();
+    void run() noexcept;
 
     std::filesystem::path path_{};
     FailureHandler failureHandler_{};

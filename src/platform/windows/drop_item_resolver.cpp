@@ -227,37 +227,48 @@ void DropItemResolver::submit(DropImportRequest request)
     condition_.notify_one();
 }
 
-void DropItemResolver::run()
+void DropItemResolver::run() noexcept
 {
-    for (;;)
-    {
-        DropImportRequest request{};
-        {
-            std::unique_lock lock{mutex_};
-            condition_.wait(lock, [this] { return stopping_ || !pending_.empty(); });
-            if (stopping_)
+    try {
+        for (;;) {
+            DropImportRequest request{};
             {
-                return;
+                std::unique_lock lock{mutex_};
+                condition_.wait(lock, [this] { return stopping_ || !pending_.empty(); });
+                if (stopping_) {
+                    return;
+                }
+                request = std::move(pending_.front());
+                pending_.pop_front();
             }
-            request = std::move(pending_.front());
-            pending_.pop_front();
-        }
 
-        DropImportResult result{};
-        try
-        {
-            result = resolveDroppedSources(request);
+            try {
+                DropImportResult result{};
+                try {
+                    result = resolveDroppedSources(request);
+                }
+                catch (...) {
+                    result.targetTabIndex = request.targetTabIndex;
+                    result.targetGridSlot = request.targetGridSlot;
+                    result.unsupportedCount = request.sources.size();
+                    result.failed = true;
+                }
+                if (completionHandler_) {
+                    completionHandler_(std::move(result));
+                }
+            }
+            catch (...) {
+                // A background failure must not terminate the application.
+            }
         }
-        catch (...)
-        {
-            result.targetTabIndex = request.targetTabIndex;
-            result.targetGridSlot = request.targetGridSlot;
-            result.unsupportedCount = request.sources.size();
-            result.failed = true;
+    }
+    catch (...) {
+        try {
+            const std::scoped_lock lock{mutex_};
+            stopping_ = true;
+            pending_.clear();
         }
-        if (completionHandler_)
-        {
-            completionHandler_(std::move(result));
+        catch (...) {
         }
     }
 }

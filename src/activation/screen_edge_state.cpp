@@ -172,7 +172,8 @@ std::optional<ScreenEdgeHit> EdgeDwellStateMachine::update(
         return std::nullopt;
     }
 
-    if (!hit) {
+    if (!hit || !activeHit_ || hit->zone != activeHit_->zone
+        || hit->monitor != activeHit_->monitor) {
         leftAfterTrigger_ = true;
     }
     if (nowMs < phaseStartedAt_) {
@@ -180,7 +181,15 @@ std::optional<ScreenEdgeHit> EdgeDwellStateMachine::update(
         return std::nullopt;
     }
     if (leftAfterTrigger_ && nowMs - phaseStartedAt_ >= cooldownMs_) {
-        reset();
+        if (!suppressed && hit) {
+            phase_ = EdgeDwellPhase::Pending;
+            activeHit_ = hit;
+            phaseStartedAt_ = nowMs;
+            leftAfterTrigger_ = false;
+        }
+        else {
+            reset();
+        }
     }
     return std::nullopt;
 }

@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- |
 | PROD-GRID-001 | Grid 优先、Tab 分类并支持跨 Tab 搜索 | `product-scope.md`、`launcher-ui.md` | UI 集成 + 键盘运行验证 | 已验证（2026-08-28：`items.json` Tab/Grid 绑定、量化行列槽位、Grid 与 Tab 之间固定 8 DIP 间距；Tab 高度 30 DIP、无间隙和圆角，普通背景 `#252525`、悬浮背景 `#414141`，当前 Tab 底部高亮线使用 `#0D7FD9` 和 4 DIP 高度；区域菜单、分类新增/重命名/删除、空 Tab 无确认直接删除、非空 Tab 确认后迁移条目、任意目标 Tab 鼠标拖拽排序、默认无选中与导航键激活、鼠标滚轮全区域循环分类、`Tab`/`Shift+Tab` 循环分类、Tab 64 DIP 最小宽度、溢出连续隐藏与活动项自动进入可见区、无横向滚动条、鼠标/键盘启动、同 Tab 拖拽重排、跨 Tab 移动、目标高亮、底部附属搜索窗、DIP 命中、可见焦点、无 Grid 右侧分页位置条，以及直接输入/Ctrl+F、Unicode 跨 Tab 搜索、稳定排序、仅显示项目名称而隐藏来源 Tab、查询后默认选中第一项、方向键按 Grid 导航、直接 Enter 启动、退格/粘贴、Home/End、PageUp/PageDown 和两阶段 Esc 已实现；Core 分类/条目原子排序、Tab 删除确认策略、窗口级键盘/滚轮/溢出 Tab 映射/条目与 Tab 拖拽、普通 Tab 单击与区域菜单测试此前通过；本次同步更新集成测试契约，按开发约定仅执行 Debug 编译与启动） |
 | PROD-ITEM-001 | 添加、编辑、删除和跨 Tab 移动条目并安全持久化 | `launcher-ui.md`、`data-and-config.md` | Launcher 窗口集成 + Core 变更测试 + 后台存储测试 | 已验证（2026-08-28：空槽菜单原生项目编辑器会保留触发操作的精确 `gridSlot`，无位置来源的 `Insert` 仍追加到默认空位；Grid 双击不绑定任何操作；`F2`/右键原生属性、`Delete`/右键删除、鼠标重排及菜单跨分类移动已接入；条目菜单另支持 Unicode 复制名称/目标/完整命令。Debug Launcher 窗口测试覆盖双击无操作、全部属性字段、逻辑参数拆分、同 Tab 最终位置重排、跨 Tab 移动、删除取消与确认、相邻焦点、稳定 UUID、剪贴板和搜索索引刷新，Core/存储测试覆盖指定空槽添加、无效移动原子性、删除顺序、使用统计保留、首次默认分类、后台快照合并和退出刷新） |
-| PROD-DROP-001 | 从文件系统和浏览器拖入添加条目；文件落在已有应用或快捷方式条目时作为一次性启动参数 | `launcher-ui.md`、`windows-integration.md` | OLE 数据对象集成 + 窗口集成 + Explorer/浏览器运行验证 | 部分验证（2026-08-28：`IDropTarget` 注册/撤销、`CF_HDROP`/URL 提取、已有程序条目命中、Unicode 多文件路径按已配置参数之后追加的一次性启动、后台类型解析、目标 Tab 与精确 Grid 槽位、批量连续落位、占用槽顺移、完全重复默认跳过和后台持久化已实现；`gridSlot` 兼容读取/往返、Core 精确空槽/占用槽变更、OLE 数据对象、解析器与真实窗口注册测试通过，Explorer/浏览器鼠标矩阵待人工验证） |
+| PROD-DROP-001 | 从文件系统和浏览器拖入添加条目；文件落在已有应用或快捷方式条目时作为一次性启动参数 | `launcher-ui.md`、`windows-integration.md` | OLE 数据对象集成 + 窗口集成 + Explorer/浏览器运行验证 | 已验证（2026-08-29：自动测试覆盖 `IDropTarget` 注册/撤销、`CF_HDROP`/URL 提取、已有程序条目命中、Unicode 多文件路径按已配置参数之后追加的一次性启动、后台类型解析、目标 Tab 与精确 Grid 槽位、批量连续落位、占用槽顺移、完全重复默认跳过和后台持久化；用户真实鼠标验证 Explorer 文件、文件夹与多文件拖入，拖到指定 Tab、空槽和占用槽，文件拖到已有程序条目后作为一次性启动参数，以及 Unicode 路径和重复项目处理均通过；浏览器 URL 拖入此前亦已人工验证通过） |
 | UI-EFFECT-001 | 无边框窗口支持系统材质、固定内容表面、整体透明度和高对比度系统色，并可安全降级 | `launcher-ui.md` | 参数单元测试 + 各材质 Windows 运行截图 + 高对比度验证 | 部分验证（2026-08-28：默认 95% 整体不透明度，设置页可选择 Solid、Mica、Acrylic、Tabbed 并以滑块/数字输入设置 30%–100% 透明度，应用后主窗口与搜索窗同步刷新和持久化；四种材质窗口创建与 DWM 属性读取、非 Solid 客户区透明清除、Acrylic 合成截图和固定深色视觉已实现；普通模式使用 `#373737` 主窗口背景基色、`#252525` Tab 表面基色和 `#515151` Grid Item 表面基色，Item 悬浮/键盘焦点为 1 DIP 纯白边框且以完整内描边避免第一行顶部裁切，拖拽落点保留强调色，并在非 Solid 材质上按固定表面 alpha 混合；标题区收紧为 16 DIP，标题文字与三个字体图标共用向上 1 DIP 的视觉校正且不改变命中/无障碍边界，置顶与关闭按钮间距为 4 DIP，主菜单、标题、未置顶和关闭图标统一使用弱化文字色，字体图标使用 `Segoe Fluent Icons` 并以 `Segoe MDL2 Assets` 兜底，标题按钮悬浮/按下仅改变图标颜色而不绘制背景；全部现有窗口统一读取系统消息字体并响应系统外观、颜色、字体与 DWM 广播，高对比度自动使用系统色、Solid 与 100% 不透明度；Mica/Tabbed/Solid 完整截图和高对比度人工矩阵未验证） |
 | UI-ICON-001 | Grid 显示 Windows Shell 真实图标，异步加载失败时安全回退 | `launcher-ui.md`、`windows-integration.md` | Shell/WIC/Direct2D 单元测试 + Launcher 运行验证 | 部分验证（2026-08-28：图标视觉尺寸固定 32 DIP，并按承载 HWND 的 Per-Monitor DPI 生成独立物理像素变体；显式 ICO/PNG 使用 WIC 直接解码和最佳帧选择，SVG 使用 Direct2D SVG 文档在 16–256 px 透明画布上按 `viewBox` 等比渲染，EXE/DLL 使用资源提取，其他目标优先使用 Shell 图像工厂；Shell 直通 Alpha BGRA 先转换为预乘 BGRA 再缩放，消除透明白色像素参与插值造成的白边，缓存格式 v3 自动拒绝旧解码语义像素；保持宽高比单次缩放并对齐物理像素。后台串行提取、数据根磁盘缓存、源文件失效、损坏回退、256 项/64 MiB 磁盘淘汰、128 变体内存 LRU、设备丢失重建和首字符回退已实现。既有透明边缘、32/40/48/56/64 px 计算、ICO 解码、真实 EXE 图标、后台回调、不同尺寸磁盘命中、损坏重建和拖拽预览 `WM_DPICHANGED` 自动测试此前通过；SVG 多 DPI、预乘 Alpha 和可见像素用例已新增但按 Debug 开发约定尚未执行，多台不同 DPI 物理屏幕的移动与拖拽视觉矩阵待人工验证） |
 | UI-DRAG-001 | 除真实 Item、Tab 和标题交互按钮外的主窗口客户区可拖动无边框窗口 | `launcher-ui.md` | 命中测试单元测试 + Windows 拖拽运行验证 | 部分验证（2026-08-28：DIP 单元测试覆盖真实 Item、空 Grid 槽、Grid 间隙、Tab、主菜单、置顶和关闭按钮；真实窗口 `WM_NCHITTEST` 验证真实/空 Item 保留客户区命中、Grid 间隙作为标题区，空槽按下捕获并以系统阈值转入原生移动，未形成拖拽时左键和双击均无操作，仅保留右键菜单；实际鼠标移动结果待人工确认） |
@@ -18,13 +18,39 @@
 | PLAT-TRAY-001 | 托盘显示/隐藏、设置、退出与 Explorer 恢复 | `windows-integration.md` | 生命周期集成测试 + Explorer 运行验证 | 部分验证（2026-08-28：真实图标矩形、名称与版本两行悬浮提示、选择回调 Toggle、设置入口、可复用原生设置窗、激活/开机启动配置、标准对话框键盘路由和生命周期已实现；Debug 编译与 0.1.0 版本资源读取通过，本次按开发约定未运行测试；菜单人工操作与 Explorer 重启验证未完成） |
 | PLAT-AUTOSTART-001 | 当前用户主动启用或禁用开机启动 | `product-scope.md`、`windows-integration.md` | 注册表集成 + 含空格路径与便携模式运行验证 | 部分验证（2026-08-27：设置页、HKCU Run 固定值查询/写入/删除、EXE 路径引用、显式 `--portable` 保留和无关值保护自动测试通过；真实登录启动待验证） |
 | PLAT-SHELL-001 | 目标、逻辑参数与工作目录分离并通过 Shell 启动 | `windows-integration.md`、`data-and-config.md` | 参数编解码集成测试 + Windows 运行验证 | 部分验证（2026-08-28：引号边界、无效 UTF-8、可复制完整命令、URL 所在位置拒绝、真实 `ShellExecuteExW` 参数回读、两 Tab 点击启动和稳定 `Hunlongyu.HLaunch` AppUserModelID 查询测试通过；`.lnk` 集成测试创建真实快捷方式并验证快捷方式参数先于条目参数、解析失败时保留直接 Shell 回退；启动、图标、所在位置和复制命令已统一使用 EXE 目录相对路径策略，便携模式保存 EXE 树内相对路径；条目菜单已接入单次 `runas` 和 Explorer 目标选择，文件/文件夹/URL、UAC 取消、Explorer 选中及失效目标人工矩阵未完成） |
-| UIA-001 | 键盘和 UI Automation 可操作 | `accessibility.md` | Narrator + Accessibility Insights | 部分验证（2026-08-27：Grid/Tab/搜索键盘路径、默认无选中、导航键激活焦点、PageUp/PageDown、受选中状态约束的 Enter/`F2`/`Delete`、`Insert`、两阶段 Esc、可见焦点、系统字体和高对比度语义色已实现并完成窗口消息/字体自动测试；Launcher UIA Fragment Provider、Invoke/Selection/SelectionItem 和稳定 Runtime ID 已实现并通过真实 UI Automation 客户端自动测试；Narrator、Accessibility Insights 和高对比度人工验证未完成） |
+| UIA-001 | 键盘和 UI Automation 可操作 | `accessibility.md` | Narrator + Accessibility Insights | 部分验证（2026-08-29：Grid/Tab/搜索键盘路径、默认无选中、导航键激活焦点、PageUp/PageDown、受选中状态约束的 Enter/`F2`/`Delete`、`Insert`、两阶段 Esc、可见焦点、系统字体和高对比度语义色已实现并完成窗口消息/字体自动测试；Launcher UIA Fragment Provider、Invoke/Selection/SelectionItem 和稳定 Runtime ID 已实现并通过真实 UI Automation 客户端自动测试；Provider 跨线程共享状态已经同步，断开后清除窗口回调，COM 方法以 HRESULT 收口异常；Narrator、Accessibility Insights 和高对比度人工验证未完成） |
 | QUALITY-LOG-001 | 诊断日志受容量、数量、时间和隐私边界约束，并记录关键生命周期及未处理异常 | `quality.md` | 单元测试 + Windows 启动/退出日志验证 | 已验证（2026-08-28：日志测试覆盖净化、容量、数量、过期和异常记录；`diagnostics.loggingEnabled` 默认开启、缺失兼容、关闭值往返、设置窗口启停回调、运行时日志及异常过滤器启停、后台持久化和失败回滚已实现；Debug 便携运行日志覆盖数据加载、窗口/服务创建与正常退出） |
 | BUILD-DEPS-001 | 依赖固定 commit 且只进入允许目标 | `engineering.md` | MSVC Configure/Build/CTest + cache 检查 | 已验证（2026-08-20 Debug） |
-| RELEASE-001 | x64 `/MT` 单 EXE、无第三方运行时 DLL | `engineering.md`、`quality.md` | 干净 Release 构建 + 二进制依赖检查 | 已验证（2026-08-28：全新独立目录 MSVC x64 Release `/MT` 配置和编译通过，Release 15/15 CTest 通过；便携目录仅含 0.975 MiB 的 `HLaunch.exe`，`dumpbin /dependents` 只含 Windows 系统 DLL且动态 CRT 导入为 0；SHA-256 `0941B399E98E2D4C626C725D5DAB461D81501B6A33EBA4B9CC6FB649243A5082`） |
+| RELEASE-001 | x64 `/MT` 单 EXE、无第三方运行时 DLL | `engineering.md`、`quality.md` | 干净 Release 构建 + 二进制依赖检查 | 已验证（2026-08-29：v0.1.17 MSVC x64 Release 编译和 15/15 CTest 通过；配置阶段拒绝非 x64，实际编译命令包含静态 CRT `-MT`；便携目录仅含一个 1,058,304 字节（1.009 MiB）的 x64 PE32+ `HLaunch.exe`，`dumpbin /dependents` 只含 Windows 系统 DLL且无动态 CRT 导入；SHA-256 `F0E6C22A31B1654988779C23F99391F0EFAC64CE327FB0FA413D337AFD7A3F04`） |
 
 2026-08-28 补充：`PROD-GRID-001` 的非空 Tab 已支持“启动页面中的所有项目”，空 Tab 禁用；`PROD-ITEM-001` 在 Shell 成功接受启动后按稳定 ID 增加 `launchCount`、写入 UTC `lastLaunchedAt`、刷新搜索排序并提交后台保存，失败或 UAC 取消不计数。Launcher/UI 测试 47/47、398 个断言通过。
 
 2026-08-28 置顶与菜单收口：标题按钮、主菜单、`Ctrl+Space` 和 UI Automation 名称统一使用“置顶/取消置顶”，置顶时设置 `HWND_TOPMOST` 并阻止失焦隐藏，取消时恢复 `HWND_NOTOPMOST`；使用 Windows 10/11 共同支持的 `E718`/`E77A` 图钉字形。条目菜单移除锁定与行/列占位，空槽菜单移除创建子菜单和删除空按钮；完整行列缩放继续由窗口边缘负责。Debug 15/15 CTest 通过，Launcher/UI 测试包含 Topmost 状态往返和精简菜单结构。
+
+2026-08-29 置顶启动行为补充：置顶状态下，Item 成功交给 Shell 启动后 Launcher 保持显示和置顶；未置顶时仍在成功启动后隐藏。置顶不拦截用户的显式隐藏操作，`Esc`、关闭按钮和 `WM_CLOSE` 仍然隐藏窗口，之后再次显示时继续保持置顶状态。MSVC x64 Debug 编译及 15/15 CTest 通过，Launcher/UI 窗口测试覆盖上述状态转换。
+
+2026-08-29 `DATA-CONFIG-001` 稳定性补充：Windows 注销或关机确认后刷新条目与配置保存队列；高于当前版本的 schema 会显示文件类型、完整路径和不覆盖说明后停止启动。存储测试覆盖抛出异常的保存通知隔离，Debug 与 Release 均 15/15 CTest 通过。
+
+2026-08-29 `UI-EFFECT-001` 标题图标比例补充：v0.1.7 将可见轮廓偏大的置顶/取消置顶字形从 14 DIP 调整为专用 12 DIP 格式，菜单和关闭保持 14 DIP；16 × 16 DIP 点击区域、按钮间距和无障碍边界不变，自动测试固定该视觉尺寸契约。
+
+2026-08-29 `ACT-HOTKEY-001` 下拉列表补充：v0.1.8 将候选键按 `Space → 0–9 → A–Z → F键` 排列，每次展开从顶部显示，Space 和全部数字无需滚动即可看到；其余 49 项保留原生垂直滚动访问。窗口测试验证总数、关键索引、前 11 项所需高度、滚动到后续项目和顶部复位。
+
+2026-08-29 `ACT-EDGE-001` 设置精简补充：v0.1.9 移除边缘宽度、角落大小、停留、采样和冷却五个 UI 调节项，运行时固定为 4 DIP、16 DIP、300 ms、40 ms、500 ms。schema v1 仍写入这五个固定字段以支持旧版本回退；新版读取忽略历史自定义值。窗口和配置测试分别覆盖控件移除、应用归一化、旧值忽略和保存写回。
+
+2026-08-29 `ACT-HOTKEY-001` 滚轮补充：v0.1.10 为按键下拉列表启用原生垂直滚动和固定弹出高度，并在展开后延迟复位顶部。真实窗口测试验证 `ComboLBox` 含 `WS_VSCROLL`，且收到向下 `WM_MOUSEWHEEL` 后顶部索引确实增加。
+
+2026-08-29 `ACT-EDGE-001` 名单编辑补充：v0.1.11 将进程黑名单和白名单改为带垂直滚动条的原生多行输入框，推荐每行一项，同时兼容逗号和分号。窗口测试覆盖多行样式与高度、混合分隔解析、去重以及 CRLF 每行一项回显。
+
+2026-08-29 `UI-EFFECT-001` 设置布局补充：v0.1.12 将选项窗口客户区从 620 × 610 DIP 收紧为 540 × 610 DIP，横向减少 80 DIP；真实窗口测试固定新宽度，并验证常规、唤起两个页签全部可见控件均未越界。
+
+2026-08-29 `UI-EFFECT-001` 底部留白补充：v0.1.13 将选项窗口客户区高度从 610 DIP 缩短为 590 DIP，底部控件位置不变，使按钮组下方留白减少约 20 DIP；窗口测试固定 540 × 590 DIP 并验证全部可见控件未越界。
+
+2026-08-29 `UI-EFFECT-001` 分组边框补充：v0.1.14 将选项窗口宽度从 540 DIP 回调为 560 DIP，修复最右侧“右下”复选框压住屏幕边缘 GroupBox 边框；窗口测试要求该控件与所属分组框右边至少保留 12 DIP。
+
+2026-08-29 `ACT-EDGE-001` 灵敏度补充：v0.1.15 将内部固定停留时间从 300 ms 缩短到 180 ms、采样间隔从 40 ms 缩短到 30 ms，目标触发窗口约为 180–210 ms；保留停留判定、500 ms 冷却和离开后重武装，避免边缘掠过或持续停留造成重复触发。
+
+2026-08-29 `ACT-EDGE-001` 重复唤起补充：v0.1.16 将内部冷却从 500 ms 缩短到 100 ms，并在鼠标已离开触发热区且提前返回时，于冷却结束的同一次采样直接开始新的停留计时；回归测试覆盖快速离开、冷却前返回和无需再次移动即可二次触发。
+
+2026-08-29 设置入口命名补充：v0.1.17 将托盘菜单、Launcher 主菜单和对话框标题统一为“设置”；自动测试锁定主菜单 `设置...\tCtrl+O` 与窗口标题 `HLaunch 设置`。
 
 状态变化时在同一行补日期和证据路径。文档验收条件、自动测试与运行记录应引用同一个 ID；一个 smoke test 不能替代产品功能证据。

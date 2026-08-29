@@ -34,6 +34,7 @@ struct DocumentLoadResult {
 enum class StoreErrorCode {
     FileIo,
     InvalidData,
+    Unexpected,
 };
 
 struct StoreError {

@@ -297,7 +297,7 @@ bool LauncherWindow::create(
         IMAGE_ICON,
         GetSystemMetrics(SM_CXSMICON),
         GetSystemMetrics(SM_CYSMICON),
-        LR_DEFAULTCOLOR));
+        LR_DEFAULTCOLOR | LR_SHARED));
     windowClass.lpszClassName = launcherWindowClass;
     if (!RegisterClassExW(&windowClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
         return false;
@@ -712,6 +712,13 @@ void LauncherWindow::hide()
     ShowWindow(window_, SW_HIDE);
 }
 
+void LauncherWindow::hideAfterSuccessfulLaunchIfNeeded()
+{
+    if (!windowPinned_) {
+        hide();
+    }
+}
+
 void LauncherWindow::toggle()
 {
     if (isVisible()) {
@@ -760,7 +767,12 @@ LRESULT CALLBACK LauncherWindow::windowProcedure(
     if (self) {
         return self->handleMessage(window, message, wParam, lParam);
     }
-    } catch (...) {}
+    }
+    catch (...) {
+        OutputDebugStringW(L"HLaunch launcher window callback failed.\n");
+        if (message == WM_NCCREATE) return FALSE;
+        if (message == WM_CREATE) return -1;
+    }
     return DefWindowProcW(window, message, wParam, lParam);
 }
 
@@ -835,6 +847,7 @@ LRESULT CALLBACK LauncherWindow::dragPreviewWindowProcedure(
         }
     }
     catch (...) {
+        OutputDebugStringW(L"HLaunch drag preview callback failed.\n");
     }
     return DefWindowProcW(window, message, wParam, lParam);
 }
@@ -1454,6 +1467,7 @@ bool LauncherWindow::createTextFormats()
     tabFormat_ = nullptr;
     iconFormat_ = nullptr;
     chromeIconFormat_ = nullptr;
+    pinIconFormat_ = nullptr;
     const auto systemFontFamily = systemUiFontFamily(dpi_);
     effectiveFontFamily_ = systemFontFamily;
     const auto& fontFamily = effectiveFontFamily_;
@@ -1528,6 +1542,17 @@ bool LauncherWindow::createTextFormats()
             chromeIconFormat_.put()))) {
         return false;
     }
+    if (FAILED(writeFactory_->CreateTextFormat(
+            chromeIconFont,
+            nullptr,
+            DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            metrics_.pinIconSize,
+            L"en-US",
+            pinIconFormat_.put()))) {
+        return false;
+    }
     titleFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     titleFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
     titleFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
@@ -1542,6 +1567,8 @@ bool LauncherWindow::createTextFormats()
     iconFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     chromeIconFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
     chromeIconFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+    pinIconFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    pinIconFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
     return true;
 }
 
@@ -2203,7 +2230,7 @@ void LauncherWindow::render()
     drawText(
         windowPinned_ ? L"\uE77A" : L"\uE718",
         pinButton,
-        chromeIconFormat_.get(),
+        pinIconFormat_.get(),
         chromeBrush(
             LauncherChromeIcon::Pin,
             hoverTarget_.region == LauncherHoverRegion::Pin));

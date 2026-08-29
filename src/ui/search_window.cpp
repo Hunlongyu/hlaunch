@@ -244,7 +244,12 @@ LRESULT CALLBACK SearchWindow::windowProcedure(
     if (self) {
         return self->handleMessage(window, message, wParam, lParam);
     }
-    } catch (...) {}
+    }
+    catch (...) {
+        OutputDebugStringW(L"HLaunch search window callback failed.\n");
+        if (message == WM_NCCREATE) return FALSE;
+        if (message == WM_CREATE) return -1;
+    }
     return DefWindowProcW(window, message, wParam, lParam);
 }
 
@@ -566,7 +571,10 @@ LRESULT CALLBACK SearchWindow::editSubclassProcedure(const HWND edit, const UINT
         if ((message == WM_SETFOCUS || message == WM_KILLFOCUS) && self) {
             InvalidateRect(self->window_, nullptr, FALSE);
         }
-    } catch (...) {}
+    }
+    catch (...) {
+        OutputDebugStringW(L"HLaunch search edit callback failed.\n");
+    }
     return DefSubclassProc(edit, message, wParam, lParam);
 }
 

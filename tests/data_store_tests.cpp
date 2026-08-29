@@ -15,6 +15,7 @@
 #include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -349,5 +350,33 @@ TEST_CASE("PROD-ITEM-001 background save failures reach the notification callbac
     }
 
     CHECK(failureCount.load() == 1U);
+    CHECK_FALSE(std::filesystem::exists(itemsPath));
+}
+
+TEST_CASE("PROD-ITEM-001 a throwing save notification cannot terminate the worker")
+{
+    TemporaryDirectory temporary{};
+    const auto itemsPath = temporary.path() / L"items.json";
+    REQUIRE(std::filesystem::create_directory(
+        hlaunch::infrastructure::filesystem::temporaryPathFor(itemsPath)));
+    std::atomic_uint32_t callbackCount{};
+
+    hlaunch::core::ItemsDocument document{
+        .tabs = {hlaunch::core::Tab{
+            .id = "11111111-1111-4111-8111-111111111111",
+            .name = "常用",
+        }},
+    };
+    {
+        hlaunch::infrastructure::filesystem::ItemsSaveWorker worker{
+            itemsPath,
+            [&callbackCount](const auto&) {
+                ++callbackCount;
+                throw std::runtime_error{"test notification failure"};
+            }};
+        worker.submit(std::move(document));
+    }
+
+    CHECK(callbackCount.load() == 1U);
     CHECK_FALSE(std::filesystem::exists(itemsPath));
 }

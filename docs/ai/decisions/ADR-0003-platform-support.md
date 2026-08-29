@@ -2,10 +2,11 @@
 
 - 状态：已接受
 - 日期：2026-08-20
+- 补充日期：2026-08-29
 
 ## 决定
 
-正式支持 Windows 11 x64。Windows 10 x64 仅尽力兼容，重点面向 22H2 ESU 或仍受支持的 LTSC 环境。开发基线使用 Windows SDK `10.0.26100.0` 或更新兼容版本，C++/WinRT 头文件来自 Windows SDK，不另加 NuGet 运行时。
+正式支持 Windows 11 x64。Windows 10 x64 仅尽力兼容，重点面向 22H2 ESU 或仍受支持的 LTSC 环境。HLaunch 只构建和发布 x64，不支持且不规划 ARM64、x86 或 ARM32。开发基线使用 Windows SDK `10.0.26100.0` 或更新兼容版本，C++/WinRT 头文件来自 Windows SDK，不另加 NuGet 运行时。
 
 ## 原因与影响
 

@@ -35,9 +35,9 @@ constexpr std::string_view validConfig = R"({
   "activation": {
     "screenEdge": {
       "disableOnFullscreen": true,
-      "cooldownMs": 500,
-      "pollMs": 40,
-      "dwellMs": 300,
+      "cooldownMs": 100,
+      "pollMs": 30,
+      "dwellMs": 180,
       "cornerSizeDip": 16,
       "thicknessDip": 4,
       "edgeMode": "desktopOuter",
@@ -106,6 +106,16 @@ TEST_CASE("DATA-CONFIG-001 config accepts unordered and unknown fields")
         == std::vector<std::string>{"game.exe"});
     CHECK(result.value->activation.screenEdge.foregroundProcessAllowlist
         == std::vector<std::string>{"mstsc.exe"});
+    CHECK(result.value->activation.screenEdge.thicknessDip
+          == doctest::Approx(hlaunch::core::defaultScreenEdgeThicknessDip));
+    CHECK(result.value->activation.screenEdge.cornerSizeDip
+          == doctest::Approx(hlaunch::core::defaultScreenEdgeCornerSizeDip));
+    CHECK(result.value->activation.screenEdge.dwellMs
+          == hlaunch::core::defaultScreenEdgeDwellMs);
+    CHECK(result.value->activation.screenEdge.pollMs
+          == hlaunch::core::defaultScreenEdgePollMs);
+    CHECK(result.value->activation.screenEdge.cooldownMs
+          == hlaunch::core::defaultScreenEdgeCooldownMs);
     CHECK_FALSE(result.value->diagnostics.loggingEnabled);
 }
 
@@ -225,19 +235,40 @@ TEST_CASE("DATA-CONFIG-001 config round trips through its persistence DTO")
     CHECK(*roundTrip.value == *decoded.value);
 }
 
-TEST_CASE("DATA-CONFIG-001 config rejects invalid ranges and missing required fields")
+TEST_CASE("DATA-CONFIG-001 normalizes legacy edge tuning and rejects missing required fields")
 {
-    std::string invalidRange{validConfig};
-    const auto dwellPosition = invalidRange.find("\"dwellMs\": 300");
-    REQUIRE(dwellPosition != std::string::npos);
-    invalidRange.replace(dwellPosition, std::string{"\"dwellMs\": 300"}.size(), "\"dwellMs\": 99");
+    std::string legacyTuning{validConfig};
+    for (const auto& [from, to] : {
+             std::pair{"\"thicknessDip\": 4", "\"thicknessDip\": 15"},
+             std::pair{"\"cornerSizeDip\": 16", "\"cornerSizeDip\": 60"},
+             std::pair{"\"dwellMs\": 180", "\"dwellMs\": 999"},
+             std::pair{"\"pollMs\": 30", "\"pollMs\": 49"},
+             std::pair{"\"cooldownMs\": 100", "\"cooldownMs\": 4999"}}) {
+        const auto position = legacyTuning.find(from);
+        REQUIRE(position != std::string::npos);
+        legacyTuning.replace(position, std::string_view{from}.size(), to);
+    }
 
-    const auto rangeResult = hlaunch::infrastructure::json::decodeConfig(invalidRange);
-    CHECK_FALSE(rangeResult.hasValue());
-    CHECK(hasIssue(
-        rangeResult,
-        JsonIssueCode::Validation,
-        "$.activation.screenEdge.dwellMs"));
+    const auto normalized = hlaunch::infrastructure::json::decodeConfig(legacyTuning);
+    REQUIRE(normalized.hasValue());
+    CHECK(normalized.value->activation.screenEdge.thicknessDip
+          == doctest::Approx(hlaunch::core::defaultScreenEdgeThicknessDip));
+    CHECK(normalized.value->activation.screenEdge.cornerSizeDip
+          == doctest::Approx(hlaunch::core::defaultScreenEdgeCornerSizeDip));
+    CHECK(normalized.value->activation.screenEdge.dwellMs
+          == hlaunch::core::defaultScreenEdgeDwellMs);
+    CHECK(normalized.value->activation.screenEdge.pollMs
+          == hlaunch::core::defaultScreenEdgePollMs);
+    CHECK(normalized.value->activation.screenEdge.cooldownMs
+          == hlaunch::core::defaultScreenEdgeCooldownMs);
+
+    const auto encoded = hlaunch::infrastructure::json::encodeConfig(*normalized.value);
+    REQUIRE(encoded.has_value());
+    CHECK(encoded->find("\"thicknessDip\":4") != std::string::npos);
+    CHECK(encoded->find("\"cornerSizeDip\":16") != std::string::npos);
+    CHECK(encoded->find("\"dwellMs\":180") != std::string::npos);
+    CHECK(encoded->find("\"pollMs\":30") != std::string::npos);
+    CHECK(encoded->find("\"cooldownMs\":100") != std::string::npos);
 
     constexpr std::string_view missingKey = R"({"schemaVersion":1,"activation":{}})";
     const auto missingResult = hlaunch::infrastructure::json::decodeConfig(missingKey);

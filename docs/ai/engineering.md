@@ -16,6 +16,8 @@
 
 “单 EXE”表示不附带 VC++ Redistributable、Qt、.NET、WebView2 或第三方运行时 DLL；配置、日志和缓存是正常外部数据。
 
+体积小、性能强、交互不卡顿、纯本地离线和单文件发布是长期工程约束，而不是只在 V1 生效的临时目标。新增功能不得隐式引入常驻服务、网络请求、更新器、插件运行时或额外运行时 DLL；性能与体积结论必须来自可重复测量，不能仅凭实现方式推断。
+
 ## 构建规则
 
 - `CMakeLists.txt` 是唯一权威构建定义，生成的 `.sln` 不是。
@@ -25,6 +27,7 @@
 - 用 `CMAKE_CXX_STANDARD 23` 表达标准，不在文档中把 `/std:c++latest` 当成稳定 ABI/语言契约。
 - MSVC 建议启用 `/permissive- /utf-8 /W4 /EHsc /MP`；Release 可用 `/O2 /GL /LTCG /OPT:REF /OPT:ICF`，以编译器支持和测量结果为准。
 - 用 `CMAKE_MSVC_RUNTIME_LIBRARY` 设置 Release `/MT`、Debug `/MTd`。
+- 根构建在配置阶段拒绝非 x64 的 MSVC 目标；不生成 x86 或 ARM64 变体，避免产生未支持且未经验证的发布物。
 - 构建时先通过 `vswhere.exe -prerelease` 或 VS 开发者环境发现 MSVC，不硬编码版本目录。
 - 开发基线使用 Windows SDK `10.0.26100.0` 或更新的兼容 SDK。C++/WinRT 头文件取自所选 Windows SDK，不额外引入 NuGet 包；调用可能缺失于兼容系统的 API 时必须先做运行时能力检测。
 - Ninja 必须正确记录 MSVC `/showIncludes` 头文件依赖。当前 CMake 4.3 在中文 `cl.exe` 下可能把检测前缀误解码为乱码；根构建脚本仅在识别到该已知乱码值时修正为实际中文前缀，英文工具链保持自动检测结果。修正前产生的构建目录必须执行一次完整清理重建，不能继续混用旧对象。
@@ -35,6 +38,7 @@
 - 转换集中在 Infrastructure/Platform，禁止散落 ANSI code page 转换。
 - 普通可恢复错误使用 `std::expected<T, Error>` 或等价项目类型；异常只用于初始化失败等无法在当前层恢复的情况。
 - 错误对象保留操作、系统错误码和用户安全消息，日志中可记录诊断上下文。
+- Win32 窗口过程、COM/UI Automation 方法、线程入口和 `wWinMain` 都是异常边界；异常不得穿过这些 ABI 或终止后台线程，必须转换为 HRESULT、项目错误、调试诊断或安全的进程退出码。
 
 ## 依赖
 
@@ -70,4 +74,4 @@ V1 不使用 Qt、WinUI 3、Windows App SDK、WTL、ATL、WRL、Boost、TBB、li
 
 ## 系统库
 
-当前链接 user32、shell32、ole32、advapi32、d2d1、dwrite、windowscodecs、dwmapi、shcore、shlwapi、uxtheme、comctl32 和 comdlg32；`shcore` 用于按显示器取得有效 DPI，`comctl32` 用于初始化 v6 原生控件，`comdlg32` 用于文件与文件夹选择。只有实际使用时才加入其他系统库。当前不实现在线更新或崩溃转储，因此不引入 winhttp 或 dbghelp。
+当前链接 user32、shell32、ole32、advapi32、d2d1、dwrite、windowscodecs、dwmapi、shcore、shlwapi、uxtheme、comctl32 和 comdlg32；`shcore` 用于按显示器取得有效 DPI，`comctl32` 用于初始化 v6 原生控件，`comdlg32` 用于文件与文件夹选择。只有实际使用时才加入其他系统库。产品保持纯本地离线，不引入更新客户端、网络传输库或远端服务 SDK，因此不链接 winhttp；当前也不实现崩溃转储，因此不引入 dbghelp。

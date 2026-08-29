@@ -94,27 +94,32 @@ bool ForegroundProcessFilter::suppresses(
 
 std::optional<std::wstring> executableNameForWindow(const HWND window) noexcept
 {
-    DWORD processId{};
-    if (!window || !GetWindowThreadProcessId(window, &processId) || processId == 0) {
-        return std::nullopt;
-    }
-    wil::unique_process_handle process{
-        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId)};
-    if (!process) {
-        return std::nullopt;
-    }
+    try {
+        DWORD processId{};
+        if (!window || !GetWindowThreadProcessId(window, &processId) || processId == 0) {
+            return std::nullopt;
+        }
+        wil::unique_process_handle process{
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId)};
+        if (!process) {
+            return std::nullopt;
+        }
 
-    std::wstring path(32'768, L'\0');
-    DWORD length = static_cast<DWORD>(path.size());
-    if (!QueryFullProcessImageNameW(process.get(), 0, path.data(), &length) || length == 0) {
+        std::wstring path(32'768, L'\0');
+        DWORD length = static_cast<DWORD>(path.size());
+        if (!QueryFullProcessImageNameW(process.get(), 0, path.data(), &length) || length == 0) {
+            return std::nullopt;
+        }
+        path.resize(length);
+        const auto separator = path.find_last_of(L"\\/");
+        if (separator != std::wstring::npos) {
+            path.erase(0, separator + 1);
+        }
+        return path.empty() ? std::nullopt : std::optional<std::wstring>{std::move(path)};
+    }
+    catch (...) {
         return std::nullopt;
     }
-    path.resize(length);
-    const auto separator = path.find_last_of(L"\\/");
-    if (separator != std::wstring::npos) {
-        path.erase(0, separator + 1);
-    }
-    return path.empty() ? std::nullopt : std::optional<std::wstring>{std::move(path)};
 }
 
 } // namespace hlaunch::platform::windows

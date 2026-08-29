@@ -92,11 +92,6 @@ private:
     HWND bottomLeftZoneCheck_{};
     HWND bottomRightZoneCheck_{};
     HWND edgeModeCombo_{};
-    HWND thicknessEdit_{};
-    HWND cornerSizeEdit_{};
-    HWND dwellEdit_{};
-    HWND pollEdit_{};
-    HWND cooldownEdit_{};
     HWND fullscreenCheck_{};
     HWND processBlocklistEdit_{};
     HWND processAllowlistEdit_{};

@@ -11,7 +11,9 @@
 #include <string_view>
 #include <vector>
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
+namespace {
+
+int runApplication(const HINSTANCE instance)
 {
     INITCOMMONCONTROLSEX commonControls{
         .dwSize = sizeof(INITCOMMONCONTROLSEX),
@@ -52,4 +54,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
 
     hlaunch::app::Application application{};
     return application.run(instance, *options);
+}
+
+} // namespace
+
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
+{
+    try {
+        return runApplication(instance);
+    }
+    catch (...) {
+        OutputDebugStringW(L"HLaunch terminated after an unexpected startup exception.\n");
+        MessageBoxW(
+            nullptr,
+            L"HLaunch 遇到未预期的启动错误，无法继续运行。",
+            L"HLaunch",
+            MB_OK | MB_ICONERROR);
+        return 8;
+    }
 }

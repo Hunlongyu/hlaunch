@@ -75,6 +75,7 @@ public:
     void toggle();
     void close();
     void recordSuccessfulLaunch(std::string_view itemId);
+    void hideAfterSuccessfulLaunchIfNeeded();
 
     [[nodiscard]] HWND handle() const noexcept;
     [[nodiscard]] bool isVisible() const noexcept;
@@ -274,6 +275,7 @@ private:
     winrt::com_ptr<IDWriteTextFormat> tabFormat_{};
     winrt::com_ptr<IDWriteTextFormat> iconFormat_{};
     winrt::com_ptr<IDWriteTextFormat> chromeIconFormat_{};
+    winrt::com_ptr<IDWriteTextFormat> pinIconFormat_{};
     winrt::com_ptr<ID2D1SolidColorBrush> backgroundBrush_{};
     winrt::com_ptr<ID2D1SolidColorBrush> surfaceBrush_{};
     winrt::com_ptr<ID2D1SolidColorBrush> elevatedBrush_{};
