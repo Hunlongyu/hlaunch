@@ -156,6 +156,11 @@ extractShellIconPixels(const std::string &target, const std::optional<std::strin
     }
     if (const auto path = utf8ToWide(target))
     {
+        if (lowerExtension(*path) == L".exe") {
+            if (auto pixels = extractExplicitIconPixels(*path, pixelSize)) {
+                return pixels;
+            }
+        }
         if (auto pixels = extractShellItemPixels(*path, pixelSize)) {
             return pixels;
         }

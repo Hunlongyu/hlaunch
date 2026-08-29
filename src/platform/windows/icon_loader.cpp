@@ -5,6 +5,7 @@
 
 #include <Objbase.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace hlaunch::platform::windows {
@@ -106,7 +107,7 @@ IconLoadResult loadIconPixels(
     };
     const auto cacheIdentity = iconCacheIdentity(request);
     const IconDiskCache cache{{.directory = cacheDirectory}};
-    if (const auto cached = cache.load(cacheIdentity))
+    if (const auto cached = cache.load(request.itemId, cacheIdentity))
     {
         result.width = cached->width;
         result.height = cached->height;
@@ -124,7 +125,7 @@ IconLoadResult loadIconPixels(
     result.height = pixels->height;
     result.pixels = std::move(pixels->values);
     result.succeeded = true;
-    static_cast<void>(cache.store(cacheIdentity, IconPixels{
+    static_cast<void>(cache.store(request.itemId, cacheIdentity, IconPixels{
         .width = result.width,
         .height = result.height,
         .values = result.pixels,
@@ -168,30 +169,64 @@ void IconLoader::submit(IconLoadRequest request)
     condition_.notify_one();
 }
 
+void IconLoader::invalidate(std::string itemId)
+{
+    if (itemId.empty()) {
+        return;
+    }
+    {
+        const std::scoped_lock lock{mutex_};
+        if (stopping_) {
+            return;
+        }
+        std::erase_if(pending_, [&itemId](const IconLoadRequest& request) {
+            return request.itemId == itemId;
+        });
+        if (std::ranges::find(invalidations_, itemId) == invalidations_.end()) {
+            invalidations_.push_back(std::move(itemId));
+        }
+    }
+    condition_.notify_one();
+}
+
 void IconLoader::run() noexcept
 {
     const ComApartment apartment{};
     try {
         for (;;) {
-            IconLoadRequest request{};
+            std::optional<IconLoadRequest> request{};
+            std::string invalidatedItemId{};
             {
                 std::unique_lock lock{mutex_};
-                condition_.wait(lock, [this] { return stopping_ || !pending_.empty(); });
-                if (stopping_) {
+                condition_.wait(lock, [this] {
+                    return stopping_ || !invalidations_.empty() || !pending_.empty();
+                });
+                if (!invalidations_.empty()) {
+                    invalidatedItemId = std::move(invalidations_.front());
+                    invalidations_.pop_front();
+                }
+                else if (stopping_) {
                     return;
                 }
-                request = std::move(pending_.front());
-                pending_.pop_front();
+                else {
+                    request = std::move(pending_.front());
+                    pending_.pop_front();
+                }
+            }
+
+            if (!invalidatedItemId.empty()) {
+                IconDiskCache{{.directory = cacheDirectory_}}.eraseScope(invalidatedItemId);
+                continue;
             }
 
             try {
                 IconLoadResult result{
-                    .itemId = request.itemId,
-                    .sourceKey = request.sourceKey,
-                    .requestedPixelSize = request.pixelSize,
+                    .itemId = request->itemId,
+                    .sourceKey = request->sourceKey,
+                    .requestedPixelSize = request->pixelSize,
                 };
                 try {
-                    result = loadIconPixels(request, cacheDirectory_);
+                    result = loadIconPixels(*request, cacheDirectory_);
                 }
                 catch (...) {
                     result.succeeded = false;

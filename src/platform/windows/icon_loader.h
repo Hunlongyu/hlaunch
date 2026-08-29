@@ -53,6 +53,7 @@ class IconLoader final
     IconLoader &operator=(const IconLoader &) = delete;
 
     void submit(IconLoadRequest request);
+    void invalidate(std::string itemId);
 
   private:
     void run() noexcept;
@@ -61,6 +62,7 @@ class IconLoader final
     std::mutex mutex_{};
     std::condition_variable condition_{};
     std::deque<IconLoadRequest> pending_{};
+    std::deque<std::string> invalidations_{};
     bool stopping_{};
     std::filesystem::path cacheDirectory_{};
     std::thread thread_{};

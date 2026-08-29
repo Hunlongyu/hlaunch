@@ -3249,6 +3249,12 @@ void LauncherWindow::deleteItem(const std::size_t absoluteIndex)
     }
 
     document_ = std::move(updatedDocument);
+    if (iconLoader_) {
+        iconLoader_->invalidate(removed->id);
+    }
+    std::erase_if(iconCache_, [&removed](const auto& entry) {
+        return entry.first.itemId == removed->id;
+    });
     rebuildSearchIndex();
     if (wasFiltering) {
         updateSearch(query);

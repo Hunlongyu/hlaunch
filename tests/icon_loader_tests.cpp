@@ -316,13 +316,94 @@ TEST_CASE("UI-ICON-001 disk cache keeps independent mixed-DPI variants")
     CHECK(second64.fromDiskCache);
 }
 
+TEST_CASE("UI-ICON-001 replacement item uses a fresh cache namespace")
+{
+    TemporaryDirectory temporary{};
+    const hlaunch::platform::windows::IconLoadRequest oldRequest{
+        .itemId = "old-item",
+        .sourceKey = "same-path",
+        .target = currentExecutableUtf8(),
+        .pixelSize = 32,
+    };
+    auto newRequest = oldRequest;
+    newRequest.itemId = "new-item";
+
+    const auto oldFirst = hlaunch::platform::windows::loadIconPixels(
+        oldRequest, temporary.path());
+    const auto oldSecond = hlaunch::platform::windows::loadIconPixels(
+        oldRequest, temporary.path());
+    const auto newFirst = hlaunch::platform::windows::loadIconPixels(
+        newRequest, temporary.path());
+    const auto newSecond = hlaunch::platform::windows::loadIconPixels(
+        newRequest, temporary.path());
+
+    REQUIRE(oldFirst.succeeded);
+    REQUIRE(oldSecond.succeeded);
+    REQUIRE(newFirst.succeeded);
+    REQUIRE(newSecond.succeeded);
+    CHECK_FALSE(oldFirst.fromDiskCache);
+    CHECK(oldSecond.fromDiskCache);
+    CHECK_FALSE(newFirst.fromDiskCache);
+    CHECK(newSecond.fromDiskCache);
+}
+
+TEST_CASE("UI-ICON-001 invalidating an item removes only its disk cache")
+{
+    TemporaryDirectory temporary{};
+    const hlaunch::platform::windows::IconPixels pixels{
+        .width = 1,
+        .height = 1,
+        .values = {1, 2, 3, 4},
+    };
+    const hlaunch::platform::windows::IconDiskCache cache{{
+        .directory = temporary.path(),
+    }};
+
+    REQUIRE(cache.store("old-item", "same-source", pixels));
+    REQUIRE(cache.store("new-item", "same-source", pixels));
+    REQUIRE(cache.load("old-item", "same-source").has_value());
+    REQUIRE(cache.load("new-item", "same-source").has_value());
+
+    cache.eraseScope("old-item");
+
+    CHECK_FALSE(cache.load("old-item", "same-source").has_value());
+    CHECK(cache.load("new-item", "same-source").has_value());
+}
+
+TEST_CASE("UI-ICON-001 loader flushes pending invalidation during shutdown")
+{
+    TemporaryDirectory temporary{};
+    const hlaunch::platform::windows::IconLoadRequest request{
+        .itemId = "removed-item",
+        .sourceKey = "removed-source",
+        .target = currentExecutableUtf8(),
+        .pixelSize = 32,
+    };
+    REQUIRE(hlaunch::platform::windows::loadIconPixels(request, temporary.path()).succeeded);
+    {
+        hlaunch::platform::windows::IconLoader loader{
+            [](hlaunch::platform::windows::IconLoadResult) {}, temporary.path()};
+        loader.invalidate(request.itemId);
+    }
+
+    const auto reloaded = hlaunch::platform::windows::loadIconPixels(
+        request, temporary.path());
+    REQUIRE(reloaded.succeeded);
+    CHECK_FALSE(reloaded.fromDiskCache);
+}
+
 TEST_CASE("UI-ICON-001 disk cache trims only its oldest bounded entries")
 {
     TemporaryDirectory temporary{};
     const auto unrelated = temporary.path() / L"keep.txt";
+    const auto obsoleteCache = temporary.path() / L"0123456789abcdef.hlci";
     {
         std::ofstream output{unrelated};
         output << "keep";
+    }
+    {
+        std::ofstream output{obsoleteCache};
+        output << "obsolete";
     }
     const hlaunch::platform::windows::IconDiskCache cache{{
         .directory = temporary.path(),
@@ -335,9 +416,9 @@ TEST_CASE("UI-ICON-001 disk cache trims only its oldest bounded entries")
         .values = {1, 2, 3, 4},
     };
 
-    REQUIRE(cache.store("one", pixels));
-    REQUIRE(cache.store("two", pixels));
-    REQUIRE(cache.store("three", pixels));
+    REQUIRE(cache.store("one", "icon", pixels));
+    REQUIRE(cache.store("two", "icon", pixels));
+    REQUIRE(cache.store("three", "icon", pixels));
 
     std::size_t cacheEntryCount{};
     for (const auto &entry : std::filesystem::directory_iterator{temporary.path()})
@@ -346,4 +427,5 @@ TEST_CASE("UI-ICON-001 disk cache trims only its oldest bounded entries")
     }
     CHECK(cacheEntryCount == 2U);
     CHECK(std::filesystem::is_regular_file(unrelated));
+    CHECK_FALSE(std::filesystem::exists(obsoleteCache));
 }

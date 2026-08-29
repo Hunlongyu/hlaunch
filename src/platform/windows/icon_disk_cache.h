@@ -22,11 +22,19 @@ class IconDiskCache final
   public:
     explicit IconDiskCache(IconDiskCacheOptions options);
 
-    [[nodiscard]] std::optional<IconPixels> load(std::string_view identity) const;
-    [[nodiscard]] bool store(std::string_view identity, const IconPixels &pixels) const;
+    [[nodiscard]] std::optional<IconPixels> load(
+        std::string_view scope,
+        std::string_view identity) const;
+    [[nodiscard]] bool store(
+        std::string_view scope,
+        std::string_view identity,
+        const IconPixels &pixels) const;
+    void eraseScope(std::string_view scope) const;
 
   private:
-    [[nodiscard]] std::filesystem::path cachePath(std::string_view identity) const;
+    [[nodiscard]] std::filesystem::path cachePath(
+        std::string_view scope,
+        std::string_view identity) const;
     void trim() const;
 
     IconDiskCacheOptions options_{};
