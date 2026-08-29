@@ -527,11 +527,27 @@ LRESULT Application::handleActivationMessage(const UINT message, const WPARAM wP
         launcher_.refreshSystemAppearance();
         settings_.refreshSystemAppearance();
     }
-    if (const auto trayCommand =
-            trayIcon_.handleMessage(message, wParam, lParam, launcher_.isVisible())) {
+    std::optional<bool> trayStartupState{};
+    if (message == platform::windows::trayIconCallbackMessage
+        && (LOWORD(lParam) == WM_CONTEXTMENU || LOWORD(lParam) == WM_RBUTTONUP)) {
+        const auto startupState = platform::windows::isStartupEnabled();
+        if (startupState) {
+            trayStartupState = *startupState;
+        } else {
+            infrastructure::logging::writeSystemError(
+                infrastructure::logging::Level::Warning,
+                "startup_registration_query_failed",
+                startupState.error().systemCode);
+        }
+    }
+    if (const auto trayCommand = trayIcon_.handleMessage(
+            message, wParam, lParam, launcher_.isVisible(), trayStartupState)) {
         switch (*trayCommand) {
         case platform::windows::TrayCommand::ToggleLauncher:
             launcher_.toggle();
+            break;
+        case platform::windows::TrayCommand::ToggleStartup:
+            toggleStartup();
             break;
         case platform::windows::TrayCommand::Settings:
             showSettings();
@@ -608,20 +624,8 @@ void Application::launch(const core::LaunchItem& item)
 
 void Application::showSettings()
 {
-    std::expected<bool, std::wstring> startupEnabled{false};
-    const auto startupState = platform::windows::isStartupEnabled();
-    if (startupState) {
-        startupEnabled = *startupState;
-    } else {
-        infrastructure::logging::writeSystemError(infrastructure::logging::Level::Warning,
-                                                  "startup_registration_query_failed",
-                                                  startupState.error().systemCode);
-        startupEnabled = std::unexpected(L"无法读取当前用户开机启动状态，系统错误码：" +
-                                         std::to_wstring(startupState.error().systemCode));
-    }
     if (!settings_.show(
             instance_, launcher_.handle(), config_.appearance, config_.activation,
-            std::move(startupEnabled),
             config_.diagnostics.loggingEnabled,
             [this](const core::AppearanceConfig& appearance) {
                 return changeAppearance(appearance);
@@ -629,10 +633,37 @@ void Application::showSettings()
             [this](const core::ActivationConfig& activation) {
                 return changeActivation(activation);
             },
-            [this](const bool enabled) { return changeStartup(enabled); },
             [this](const bool enabled) { return changeDiagnostics(enabled); })) {
         ui::showTaskMessage(launcher_.handle(), L"HLaunch 设置", L"无法创建设置窗口。",
                             ui::TaskDialogIcon::Error);
+    }
+}
+
+void Application::toggleStartup()
+{
+    const auto startupState = platform::windows::isStartupEnabled();
+    if (!startupState) {
+        infrastructure::logging::writeSystemError(
+            infrastructure::logging::Level::Error,
+            "startup_registration_query_failed",
+            startupState.error().systemCode);
+        ui::showTaskMessage(
+            launcher_.handle(),
+            L"HLaunch 开机自启",
+            L"无法读取当前用户开机自启状态。",
+            ui::TaskDialogIcon::Error,
+            L"系统错误码：" + std::to_wstring(startupState.error().systemCode));
+        return;
+    }
+
+    const auto result = changeStartup(!*startupState);
+    if (!result) {
+        ui::showTaskMessage(
+            launcher_.handle(),
+            L"HLaunch 开机自启",
+            L"无法更新开机自启设置。",
+            ui::TaskDialogIcon::Error,
+            result.error());
     }
 }
 

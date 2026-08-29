@@ -331,13 +331,12 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
     legacyActivation.screenEdge.dwellMs = 900;
     legacyActivation.screenEdge.pollMs = 50;
     legacyActivation.screenEdge.cooldownMs = 4'000;
-    bool selectedStartup{};
     bool selectedDiagnostics{true};
     hlaunch::ui::SettingsWindow settings{};
 
     REQUIRE(settings.show(
         GetModuleHandleW(nullptr), nullptr, hlaunch::core::AppearanceConfig{},
-        legacyActivation, false, true,
+        legacyActivation, true,
         [&selectedAppearance](const hlaunch::core::AppearanceConfig& appearance) {
             selectedAppearance = appearance;
             return true;
@@ -345,10 +344,6 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
         [&selectedActivation](const hlaunch::core::ActivationConfig& activation)
             -> std::expected<void, std::wstring> {
             selectedActivation = activation;
-            return {};
-        },
-        [&selectedStartup](const bool enabled) -> std::expected<void, std::wstring> {
-            selectedStartup = enabled;
             return {};
         },
         [&selectedDiagnostics](const bool enabled) -> std::expected<void, std::wstring> {
@@ -369,14 +364,13 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
     const auto opacityEdit = GetDlgItem(settings.handle(), 2005);
     const auto hotkeyKey = GetDlgItem(settings.handle(), 2015);
     const auto controlCheck = GetDlgItem(settings.handle(), 2012);
-    const auto startupEnabled = GetDlgItem(settings.handle(), 2040);
     const auto diagnosticLoggingEnabled = GetDlgItem(settings.handle(), 2050);
     const auto processBlocklist = GetDlgItem(settings.handle(), 2033);
     const auto processAllowlist = GetDlgItem(settings.handle(), 2034);
     const auto bottomRightZone = GetDlgItem(settings.handle(), 2026);
     REQUIRE(hotkeyKey != nullptr);
     REQUIRE(controlCheck != nullptr);
-    REQUIRE(startupEnabled != nullptr);
+    CHECK(GetDlgItem(settings.handle(), 2040) == nullptr);
     REQUIRE(diagnosticLoggingEnabled != nullptr);
     REQUIRE(processBlocklist != nullptr);
     REQUIRE(processAllowlist != nullptr);
@@ -600,7 +594,6 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
     SetWindowTextW(opacityEdit, L"29");
     SendMessageW(settings.handle(), WM_COMMAND, MAKEWPARAM(2003, BN_CLICKED), 0);
     CHECK(selectedAppearance.opacityPercent == 95);
-    CHECK_FALSE(selectedStartup);
     CHECK(selectedDiagnostics);
     SetWindowTextW(opacityEdit, L"72");
     const auto mica = SendMessageW(backdropCombo, CB_FINDSTRINGEXACT, static_cast<WPARAM>(-1),
@@ -615,7 +608,6 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
     SendMessageW(hotkeyKey, CB_SETCURSEL, keyB, 0);
     SetWindowTextW(processBlocklist, L"Game\r\nMSTSC.exe; game.exe");
     SetWindowTextW(processAllowlist, L"mstsc\r\nexplorer.exe");
-    CheckDlgButton(settings.handle(), 2040, BST_CHECKED);
     CheckDlgButton(settings.handle(), 2050, BST_UNCHECKED);
     SendMessageW(settings.handle(), WM_COMMAND, MAKEWPARAM(2003, BN_CLICKED), 0);
     CHECK(selectedAppearance.backdrop == hlaunch::core::BackdropMode::Mica);
@@ -638,14 +630,13 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
     CHECK(selectedActivation.screenEdge.cooldownMs
           == hlaunch::core::defaultScreenEdgeCooldownMs);
 
-    CHECK(selectedStartup);
     CHECK_FALSE(selectedDiagnostics);
 
     settings.hide();
     CHECK_FALSE(settings.isVisible());
     REQUIRE(settings.show(
         GetModuleHandleW(nullptr), nullptr, selectedAppearance, selectedActivation,
-        true, selectedDiagnostics,
+        selectedDiagnostics,
         [&selectedAppearance](const hlaunch::core::AppearanceConfig& appearance) {
             selectedAppearance = appearance;
             return true;
@@ -653,10 +644,6 @@ TEST_CASE("UI-SETTINGS-001 settings groups general and activation options and re
         [&selectedActivation](const hlaunch::core::ActivationConfig& activation)
             -> std::expected<void, std::wstring> {
             selectedActivation = activation;
-            return {};
-        },
-        [&selectedStartup](const bool enabled) -> std::expected<void, std::wstring> {
-            selectedStartup = enabled;
             return {};
         },
         [&selectedDiagnostics](const bool enabled) -> std::expected<void, std::wstring> {

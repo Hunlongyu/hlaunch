@@ -38,6 +38,7 @@ private:
     void execute(platform::windows::ActivationCommand command);
     void launch(const core::LaunchItem& item);
     void showSettings();
+    void toggleStartup();
     [[nodiscard]] bool changeAppearance(const core::AppearanceConfig& appearance);
     [[nodiscard]] std::expected<void, std::wstring> changeActivation(
         const core::ActivationConfig& activation);

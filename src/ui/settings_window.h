@@ -19,7 +19,6 @@ public:
         std::function<bool(const core::AppearanceConfig&)>;
     using ActivationChangedHandler =
         std::function<std::expected<void, std::wstring>(const core::ActivationConfig&)>;
-    using StartupChangedHandler = std::function<std::expected<void, std::wstring>(bool)>;
     using DiagnosticsChangedHandler = std::function<std::expected<void, std::wstring>(bool)>;
 
     SettingsWindow() = default;
@@ -33,11 +32,9 @@ public:
         HWND owner,
         const core::AppearanceConfig& appearance,
         const core::ActivationConfig& activation,
-        std::expected<bool, std::wstring> startupEnabled,
         bool diagnosticLoggingEnabled,
         AppearanceChangedHandler appearanceChangedHandler,
         ActivationChangedHandler activationChangedHandler,
-        StartupChangedHandler startupChangedHandler,
         DiagnosticsChangedHandler diagnosticsChangedHandler);
     void hide();
     void setAppearance(const core::AppearanceConfig& appearance);
@@ -60,11 +57,9 @@ private:
     [[nodiscard]] bool applyAllFromControls();
     [[nodiscard]] bool applyAppearanceFromControls();
     [[nodiscard]] bool applyActivationFromControls();
-    [[nodiscard]] bool applyStartupFromControls();
     [[nodiscard]] bool applyDiagnosticsFromControls();
     void syncAppearanceControls();
     void syncActivationControls();
-    void syncStartupControls();
     void syncDiagnosticsControls();
     void updateActivationEnabledState();
     void updateVisiblePage();
@@ -96,19 +91,14 @@ private:
     HWND processBlocklistEdit_{};
     HWND processAllowlistEdit_{};
     HWND activationStatusText_{};
-    HWND startupEnabledCheck_{};
-    HWND startupStatusText_{};
     HWND diagnosticLoggingEnabledCheck_{};
     HWND diagnosticsStatusText_{};
     SystemUiFont systemUiFont_{};
     core::AppearanceConfig appearance_{};
     core::ActivationConfig activation_{};
-    bool startupEnabled_{};
     bool diagnosticLoggingEnabled_{true};
-    std::wstring startupLoadError_{};
     AppearanceChangedHandler appearanceChangedHandler_{};
     ActivationChangedHandler activationChangedHandler_{};
-    StartupChangedHandler startupChangedHandler_{};
     DiagnosticsChangedHandler diagnosticsChangedHandler_{};
     std::vector<DialogControlLayout> controlLayouts_{};
     std::vector<HWND> generalPageControls_{};

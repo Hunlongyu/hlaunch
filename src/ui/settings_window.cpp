@@ -43,7 +43,6 @@ constexpr int idEdgeBottomRight = 2026;
 constexpr int idEdgeMode = 2027;
 constexpr int idProcessBlocklist = 2033;
 constexpr int idProcessAllowlist = 2034;
-constexpr int idStartupEnabled = 2040;
 constexpr int idDiagnosticLoggingEnabled = 2050;
 
 std::wstring widenAscii(const std::string_view value)
@@ -208,11 +207,9 @@ bool SettingsWindow::show(
     const HWND owner,
     const core::AppearanceConfig& appearance,
     const core::ActivationConfig& activation,
-    std::expected<bool, std::wstring> startupEnabled,
     const bool diagnosticLoggingEnabled,
     AppearanceChangedHandler appearanceChangedHandler,
     ActivationChangedHandler activationChangedHandler,
-    StartupChangedHandler startupChangedHandler,
     DiagnosticsChangedHandler diagnosticsChangedHandler)
 {
     appearance_ = appearance;
@@ -220,20 +217,11 @@ bool SettingsWindow::show(
     diagnosticLoggingEnabled_ = diagnosticLoggingEnabled;
     appearanceChangedHandler_ = std::move(appearanceChangedHandler);
     activationChangedHandler_ = std::move(activationChangedHandler);
-    startupChangedHandler_ = std::move(startupChangedHandler);
     diagnosticsChangedHandler_ = std::move(diagnosticsChangedHandler);
-    if (startupEnabled) {
-        startupEnabled_ = *startupEnabled;
-        startupLoadError_.clear();
-    } else {
-        startupEnabled_ = false;
-        startupLoadError_ = std::move(startupEnabled.error());
-    }
     if (!window_ && !create(instance, owner)) return false;
     SetWindowLongPtrW(window_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(owner));
     setAppearance(appearance_);
     setActivation(activation_);
-    syncStartupControls();
     syncDiagnosticsControls();
     SetWindowTextW(settingsStatusText_, L"修改后选择“应用”或“确定”保存设置。");
     positionOverOwner(owner);
@@ -382,7 +370,6 @@ INT_PTR SettingsWindow::handleMessage(
         if (LOWORD(wParam) == IDCANCEL) {
             syncAppearanceControls();
             syncActivationControls();
-            syncStartupControls();
             syncDiagnosticsControls();
             hide();
             return TRUE;
@@ -566,24 +553,15 @@ void SettingsWindow::createControls()
             L"背景效果与整体透明度同时作用于 Launcher 和搜索窗；不支持的效果会安全降级。",
             0, 48, 152, 450, 34, 0);
 
-    addPage(generalPageControls_, L"BUTTON", L"Windows 登录", BS_GROUPBOX,
-            28, 212, 504, 104, 0);
-    startupEnabledCheck_ = addPage(
-        generalPageControls_, L"BUTTON", L"登录 Windows 时启动 HLaunch",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 48, 238, 260, 24, idStartupEnabled);
-    startupStatusText_ = addPage(
-        generalPageControls_, L"STATIC", L"仅修改当前用户启动项，不需要管理员权限。",
-        0, 48, 270, 450, 24, 0);
-
     addPage(generalPageControls_, L"BUTTON", L"诊断", BS_GROUPBOX,
-            28, 328, 504, 112, 0);
+            28, 212, 504, 112, 0);
     diagnosticLoggingEnabledCheck_ = addPage(
         generalPageControls_, L"BUTTON", L"启用诊断日志",
-        BS_AUTOCHECKBOX | WS_TABSTOP, 48, 354, 220, 24, idDiagnosticLoggingEnabled);
+        BS_AUTOCHECKBOX | WS_TABSTOP, 48, 238, 220, 24, idDiagnosticLoggingEnabled);
     diagnosticsStatusText_ = addPage(
         generalPageControls_, L"STATIC",
         L"日志用于定位启动、快捷键和边缘唤起问题，不记录条目名称、目标、参数或搜索词。",
-        0, 48, 386, 450, 40, 0);
+        0, 48, 270, 450, 40, 0);
 
     addPage(activationPageControls_, L"BUTTON", L"全局快捷键", BS_GROUPBOX,
             28, 50, 504, 98, 0);
@@ -691,7 +669,6 @@ void SettingsWindow::createControls()
 
     syncAppearanceControls();
     syncActivationControls();
-    syncStartupControls();
     syncDiagnosticsControls();
     updateVisiblePage();
 }
@@ -700,7 +677,6 @@ bool SettingsWindow::applyAllFromControls()
 {
     if (!applyAppearanceFromControls()
         || !applyActivationFromControls()
-        || !applyStartupFromControls()
         || !applyDiagnosticsFromControls()) {
         return false;
     }
@@ -842,29 +818,6 @@ bool SettingsWindow::applyActivationFromControls()
     return true;
 }
 
-bool SettingsWindow::applyStartupFromControls()
-{
-    const bool requested = IsDlgButtonChecked(window_, idStartupEnabled) == BST_CHECKED;
-    if (requested == startupEnabled_) {
-        return true;
-    }
-    if (startupChangedHandler_) {
-        const auto result = startupChangedHandler_(requested);
-        if (!result) {
-            syncStartupControls();
-            SetWindowTextW(startupStatusText_, result.error().c_str());
-            MessageBeep(MB_ICONWARNING);
-            return false;
-        }
-    }
-    startupEnabled_ = requested;
-    startupLoadError_.clear();
-    syncStartupControls();
-    SetWindowTextW(startupStatusText_,
-                   startupEnabled_ ? L"已启用当前用户开机启动。" : L"已关闭当前用户开机启动。");
-    return true;
-}
-
 bool SettingsWindow::applyDiagnosticsFromControls()
 {
     const bool requested =
@@ -958,15 +911,6 @@ void SettingsWindow::syncActivationControls()
         processAllowlistEdit_,
         formatProcessList(activation_.screenEdge.foregroundProcessAllowlist).c_str());
     updateActivationEnabledState();
-}
-
-void SettingsWindow::syncStartupControls()
-{
-    if (!startupEnabledCheck_) return;
-    CheckDlgButton(window_, idStartupEnabled, startupEnabled_ ? BST_CHECKED : BST_UNCHECKED);
-    const BOOL available = startupLoadError_.empty();
-    EnableWindow(startupEnabledCheck_, available);
-    if (!available) SetWindowTextW(startupStatusText_, startupLoadError_.c_str());
 }
 
 void SettingsWindow::syncDiagnosticsControls()

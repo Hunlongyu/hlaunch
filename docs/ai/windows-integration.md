@@ -1,6 +1,6 @@
 # Windows 集成
 
-当前实现状态（2026-08-28）：已实现稳定的进程 AppUserModelID `Hunlongyu.HLaunch`、按当前用户 SID 隔离的 Named Mutex、固定类名隐藏激活窗口、`--show`、`--hide`、`--toggle` 的注册消息转发、第二实例有限重试、全局快捷键注册、`Shell_NotifyIconW` 托盘图标、条目的 `ShellExecuteExW` 启动适配、Launcher 的 OLE `IDropTarget` 注册与撤销，以及当前用户开机启动设置。快捷键可用时主实例无参数启动默认隐藏；快捷键禁用或注册失败且没有显式启动命令时暂时显示主窗。Launcher 关闭按钮只执行隐藏；未置顶且前台切换到其他进程后延迟收起，同进程的搜索、菜单和原生对话框不会触发误收起。运行期窗口置顶可由标题区或 `Ctrl+Space` 切换，启用时使用 `HWND_TOPMOST` 并阻止失焦收起，取消时恢复 `HWND_NOTOPMOST`。托盘支持显示/隐藏、打开可复用的原生设置窗和退出，收到 `TaskbarCreated` 后重新添加。同一完整性级别下实测第二实例退出且主实例保持唯一。Shell 适配保持目标、逻辑参数和工作目录分离，支持 `open`/`runas` 并区分 UAC 取消；平台路径策略统一展开环境变量并以 EXE 目录解析条目相对路径，URL 目标保持原文，启动、图标、所在位置和复制命令不依赖当前工作目录。`.lnk` 通过 `IShellLinkW`/`IPersistFile` 解析目标、参数、工作目录和显示方式；解析失败时仍交由 Shell 直接打开原快捷方式，以保留特殊 Shell/Packaged App 快捷方式兼容。条目菜单可为单次启动强制使用 `runas`、按相同引用规则复制完整命令，并通过 `SHOpenFolderAndSelectItems` 在 Explorer 中选中非 URL 目标。拖放接收 `CF_HDROP`、浏览器 URL 剪贴板格式和 Unicode URL 文本，文件属性与 URL 分类在后台完成，结果通过窗口消息回到 UI 线程。Shell 图标服务直接解码显式 `.ico`、`.png` 和 `.svg`，从 EXE/DLL 提取图标资源，未设置或解码失败时从目标取得系统图标；结果在后台统一转换成预乘 BGRA 像素并回送 UI。不同完整性级别 UIPI 完整矩阵仍需人工验证。
+当前实现状态（2026-08-29）：已实现稳定的进程 AppUserModelID `Hunlongyu.HLaunch`、按当前用户 SID 隔离的 Named Mutex、固定类名隐藏激活窗口、`--show`、`--hide`、`--toggle` 的注册消息转发、第二实例有限重试、全局快捷键注册、`Shell_NotifyIconW` 托盘图标、条目的 `ShellExecuteExW` 启动适配、Launcher 的 OLE `IDropTarget` 注册与撤销，以及当前用户开机启动设置。快捷键可用时主实例无参数启动默认隐藏；快捷键禁用或注册失败且没有显式启动命令时暂时显示主窗。Launcher 关闭按钮只执行隐藏；未置顶且前台切换到其他进程后延迟收起，同进程的搜索、菜单和原生对话框不会触发误收起。运行期窗口置顶可由标题区或 `Ctrl+Space` 切换，启用时使用 `HWND_TOPMOST` 并阻止失焦收起，取消时恢复 `HWND_NOTOPMOST`。托盘支持显示/隐藏、直接切换开机自启、打开可复用的原生设置窗和退出，收到 `TaskbarCreated` 后重新添加。同一完整性级别下实测第二实例退出且主实例保持唯一。Shell 适配保持目标、逻辑参数和工作目录分离，支持 `open`/`runas` 并区分 UAC 取消；平台路径策略统一展开环境变量并以 EXE 目录解析条目相对路径，URL 目标保持原文，启动、图标、所在位置和复制命令不依赖当前工作目录。`.lnk` 通过 `IShellLinkW`/`IPersistFile` 解析目标、参数、工作目录和显示方式；解析失败时仍交由 Shell 直接打开原快捷方式，以保留特殊 Shell/Packaged App 快捷方式兼容。条目菜单可为单次启动强制使用 `runas`、按相同引用规则复制完整命令，并通过 `SHOpenFolderAndSelectItems` 在 Explorer 中选中非 URL 目标。拖放接收 `CF_HDROP`、浏览器 URL 剪贴板格式和 Unicode URL 文本，文件属性与 URL 分类在后台完成，结果通过窗口消息回到 UI 线程。Shell 图标服务直接解码显式 `.ico`、`.png` 和 `.svg`，从 EXE/DLL 提取图标资源，未设置或解码失败时从目标取得系统图标；结果在后台统一转换成预乘 BGRA 像素并回送 UI。不同完整性级别 UIPI 完整矩阵仍需人工验证。
 
 AppUserModelID 必须在创建 Launcher、搜索窗和托盘图标之前设置。失败只记录 HRESULT
 并继续运行，不能让任务栏身份能力成为启动阻断项。该 ID 是 Shell 身份契约，后续
@@ -38,13 +38,13 @@ COM 接口默认用 `winrt::com_ptr`；HANDLE、HKEY、HICON、HMENU 等经典�
 
 使用 `Shell_NotifyIconW`。托盘悬浮提示固定为两行：第一行显示 `HLaunch`，第二行以 `v{major.minor.patch}` 格式显示由 CMake 项目版本提供的当前版本号，例如 `v0.1.1`。托盘菜单至少提供显示/隐藏、设置和退出。收到 `TaskbarCreated` 后重新注册图标；退出时删除图标。
 
-当前实现覆盖图标添加/删除、Explorer 重启消息恢复、左键选择 Toggle，以及受工作区约束的显示/隐藏、设置和退出菜单。设置使用可复用的标准 Win32 模型对话框，覆盖外观、快捷键、边缘唤起和开机启动；消息循环通过 `IsDialogMessageW` 保留标准 Tab 与助记键行为。
+当前实现覆盖图标添加/删除、Explorer 重启消息恢复、左键选择 Toggle，以及受工作区约束的显示/隐藏、可勾选开机自启、设置和退出菜单。设置使用可复用的标准 Win32 模型对话框，覆盖外观、诊断、快捷键和边缘唤起；消息循环通过 `IsDialogMessageW` 保留标准 Tab 与助记键行为。
 
 ## 开机启动
 
 使用当前用户的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，不要求管理员权限。命令行必须正确引用 EXE 路径；数据目录默认已经便携优先，因此新命令不依赖 `portable.flag`。若用户通过旧命令显式传入 `--portable`，重写开机启动项时继续保留该参数以兼容既有调用，但数据目录无权限时仍允许回退 AppData。仅在用户主动启用时写入；禁用时删除属于 HLaunch 的值。
 
-当前实现以固定 `HLaunch` 注册表值作为状态真相，不在 `config.json` 重复保存。设置窗打开时读取该值；启用时始终用当前 EXE 绝对路径重写命令，可修复程序移动后的旧路径；禁用时只删除该固定值，不影响同一 Run 键中的其他程序。查询或写入失败时记录系统错误码并在设置窗就地反馈。
+当前实现以固定 `HLaunch` 注册表值作为状态真相，不在 `config.json` 重复保存。托盘菜单展开时读取该值并显示勾选状态，点击后立即切换；启用时始终用当前 EXE 绝对路径重写命令，可修复程序移动后的旧路径；禁用时只删除该固定值，不影响同一 Run 键中的其他程序。查询失败时禁用菜单项并记录系统错误码，写入失败时显示明确错误。
 
 ## 显示器与 DPI
 

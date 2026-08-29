@@ -1,18 +1,36 @@
 #include "platform/windows/tray_icon.h"
 
-#include <wil/resource.h>
-
 #include <algorithm>
 #include <iterator>
 
 namespace hlaunch::platform::windows {
-namespace {
 
-constexpr UINT_PTR toggleMenuId = 1;
-constexpr UINT_PTR settingsMenuId = 2;
-constexpr UINT_PTR exitMenuId = 3;
+wil::unique_hmenu createTrayContextMenu(
+    const bool launcherVisible,
+    const std::optional<bool> startupEnabled)
+{
+    wil::unique_hmenu menu{CreatePopupMenu()};
+    if (!menu) {
+        return {};
+    }
 
-} // namespace
+    AppendMenuW(
+        menu.get(),
+        MF_STRING,
+        trayToggleMenuId,
+        launcherVisible ? L"隐藏 HLaunch" : L"显示 HLaunch");
+    UINT startupFlags = MF_STRING;
+    if (!startupEnabled.has_value()) {
+        startupFlags |= MF_GRAYED;
+    } else if (*startupEnabled) {
+        startupFlags |= MF_CHECKED;
+    }
+    AppendMenuW(menu.get(), startupFlags, trayStartupMenuId, L"开机自启");
+    AppendMenuW(menu.get(), MF_STRING, traySettingsMenuId, L"设置");
+    AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu.get(), MF_STRING, trayExitMenuId, L"退出");
+    return menu;
+}
 
 TrayIcon::~TrayIcon()
 {
@@ -56,7 +74,8 @@ std::optional<TrayCommand> TrayIcon::handleMessage(
     const UINT message,
     WPARAM,
     const LPARAM lParam,
-    const bool launcherVisible)
+    const bool launcherVisible,
+    const std::optional<bool> startupEnabled)
 {
     if (message == taskbarCreatedMessage_ && taskbarCreatedMessage_ != 0) {
         added_ = false;
@@ -74,7 +93,7 @@ std::optional<TrayCommand> TrayIcon::handleMessage(
         return TrayCommand::ToggleLauncher;
     case WM_CONTEXTMENU:
     case WM_RBUTTONUP:
-        return showContextMenu(launcherVisible);
+        return showContextMenu(launcherVisible, startupEnabled);
     default:
         return std::nullopt;
     }
@@ -102,21 +121,14 @@ bool TrayIcon::add()
     return true;
 }
 
-std::optional<TrayCommand> TrayIcon::showContextMenu(const bool launcherVisible)
+std::optional<TrayCommand> TrayIcon::showContextMenu(
+    const bool launcherVisible,
+    const std::optional<bool> startupEnabled)
 {
-    wil::unique_hmenu menu{CreatePopupMenu()};
+    auto menu = createTrayContextMenu(launcherVisible, startupEnabled);
     if (!menu) {
         return std::nullopt;
     }
-
-    AppendMenuW(
-        menu.get(),
-        MF_STRING,
-        toggleMenuId,
-        launcherVisible ? L"隐藏 HLaunch" : L"显示 HLaunch");
-    AppendMenuW(menu.get(), MF_STRING, settingsMenuId, L"设置");
-    AppendMenuW(menu.get(), MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu.get(), MF_STRING, exitMenuId, L"退出");
 
     POINT cursor{};
     if (!GetCursorPos(&cursor)) {
@@ -131,13 +143,16 @@ std::optional<TrayCommand> TrayIcon::showContextMenu(const bool launcherVisible)
         data_.hWnd,
         nullptr);
     PostMessageW(data_.hWnd, WM_NULL, 0, 0);
-    if (selected == toggleMenuId) {
+    if (selected == trayToggleMenuId) {
         return TrayCommand::ToggleLauncher;
     }
-    if (selected == settingsMenuId) {
+    if (selected == trayStartupMenuId) {
+        return TrayCommand::ToggleStartup;
+    }
+    if (selected == traySettingsMenuId) {
         return TrayCommand::Settings;
     }
-    if (selected == exitMenuId) {
+    if (selected == trayExitMenuId) {
         return TrayCommand::Exit;
     }
     return std::nullopt;

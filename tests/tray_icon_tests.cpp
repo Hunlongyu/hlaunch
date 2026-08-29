@@ -8,6 +8,8 @@
 
 #include <Windows.h>
 
+#include <array>
+
 namespace {
 
 class TestWindow final {
@@ -84,4 +86,35 @@ TEST_CASE("PLAT-TRAY-001 tooltip shows the product name and current version")
     const auto tooltip = hlaunch::platform::windows::trayIconTooltipText();
     CHECK(tooltip.starts_with(L"HLaunch\nv"));
     CHECK(tooltip.substr(tooltip.find(L'v') + 1U) == hlaunch::applicationVersionWide);
+}
+
+TEST_CASE("PLAT-TRAY-001 context menu exposes checkable startup state")
+{
+    const auto menu = hlaunch::platform::windows::createTrayContextMenu(false, true);
+    REQUIRE(menu);
+    CHECK(GetMenuItemCount(menu.get()) == 5);
+    CHECK(GetMenuItemID(menu.get(), 0) == hlaunch::platform::windows::trayToggleMenuId);
+    CHECK(GetMenuItemID(menu.get(), 1) == hlaunch::platform::windows::trayStartupMenuId);
+    CHECK(GetMenuItemID(menu.get(), 2) == hlaunch::platform::windows::traySettingsMenuId);
+    CHECK(GetMenuItemID(menu.get(), 4) == hlaunch::platform::windows::trayExitMenuId);
+    CHECK((GetMenuState(menu.get(), 1, MF_BYPOSITION) & MF_CHECKED) != 0U);
+
+    std::array<wchar_t, 32> startupLabel{};
+    REQUIRE(GetMenuStringW(
+        menu.get(),
+        1,
+        startupLabel.data(),
+        static_cast<int>(startupLabel.size()),
+        MF_BYPOSITION) > 0);
+    CHECK(std::wstring_view{startupLabel.data()} == L"开机自启");
+
+    const auto disabledMenu =
+        hlaunch::platform::windows::createTrayContextMenu(true, std::nullopt);
+    REQUIRE(disabledMenu);
+    CHECK((GetMenuState(disabledMenu.get(), 1, MF_BYPOSITION) & (MF_DISABLED | MF_GRAYED)) != 0U);
+
+    const auto uncheckedMenu =
+        hlaunch::platform::windows::createTrayContextMenu(true, false);
+    REQUIRE(uncheckedMenu);
+    CHECK((GetMenuState(uncheckedMenu.get(), 1, MF_BYPOSITION) & MF_CHECKED) == 0U);
 }
