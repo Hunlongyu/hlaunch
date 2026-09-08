@@ -1,40 +1,79 @@
-# HLaunch
+<p align="center">
+  <img src="resources/branding/hlaunch-logo.svg" alt="HLaunch 图标" width="160" height="160">
+</p>
 
-HLaunch 是一款面向 Windows 11 x64 的轻量级纯本地离线 Grid 快速启动器，并尽力兼容 Windows 10 x64（22H2 ESU 或仍受支持的 LTSC）。它以可视化图标网格为主、搜索为辅，支持快捷键和屏幕边缘停留两种唤起方式。
+<h1 align="center">HLaunch</h1>
 
-## 主要功能
+<p align="center">把常用应用、文件和网址，放进一个随手可用的启动面板。</p>
 
-- Grid 与 Tab 分类
-- 应用、文件、文件夹、网址和快捷方式启动
-- 全局快捷键与屏幕边缘停留唤起
-- 拖放添加、排序、条目编辑和删除
-- 跨分类搜索、托盘、开机启动与便携模式
-- 多显示器和 Per-Monitor DPI V2
+<p align="center">
+  <img src="https://img.shields.io/badge/Windows_11-x64-0078D4?style=flat-square" alt="Windows 11 x64">
+  <img src="https://img.shields.io/badge/Portable-单文件-16A34A?style=flat-square" alt="便携单文件">
+  <img src="https://img.shields.io/badge/Offline-纯本地-7C3AED?style=flat-square" alt="纯本地离线">
+</p>
 
-## 技术方向
+<p align="center"><strong>简体中文</strong> · <a href="README.en.md">English</a></p>
 
-项目使用 C++23、CMake、Win32、Direct2D、DirectWrite 和 WIC，发布目标是无需额外运行库的单个 `HLaunch.exe`。配置和缓存保存在 EXE 外部；“单 EXE”仅表示程序运行不需要随附框架 DLL。HLaunch 不提供插件、脚本、外部控制接口、浏览器扩展、云服务或在线更新；URL 条目仅交由 Windows Shell 打开，程序自身不发起网络通信。
+HLaunch 是一款 Windows 原生网格启动器。用图标和分类整理常用项目，按下快捷键即可唤出，输入名称就能搜索。单个 `HLaunch.exe` 即可运行，无需安装或额外运行库。
 
-## 当前状态
+## 🖼️ 界面预览
 
-当前已经生成可运行的原生 `HLaunch.exe`：包含 Core 数据模型、独立 Glaze 适配层、便携优先数据目录、原子写入与 `.bak` 恢复、诊断日志、用户隔离的单实例应用壳、全局快捷键、默认关闭的屏幕边缘停留唤起和托盘入口，以及无边框竖向 Direct2D Launcher。托盘悬浮提示第一行显示名称、第二行显示当前版本。主窗口默认采用接近 CLaunch 的 394 × 594 DIP、5 × 8 槽位布局，Grid 与 Tab 间距为 8 DIP，16 DIP 紧凑标题区及左右按钮统一使用系统字体图标和弱化文字色；标题、空槽、条目和 Tab 分别提供区域菜单。关闭按钮只收起窗口；运行期置顶会把主窗口设为 Topmost，并在失焦或启动 Item 后继续保持显示，`Esc`、关闭按钮和其他明确隐藏操作仍可收起。窗口默认使用 Acrylic，并支持 Solid、Mica、Acrylic、Tabbed 系统背景、半透明界面表面与 30%–100% 整体透明度；默认隐藏的搜索框使用与主窗口等宽的底部附属窗，出现时不改变 Grid 布局。除 Grid、Tab 和标题交互按钮外的主客户区可拖动窗口。Tab 和 Grid 已读取 `items.json`，支持分类新增、重命名、删除、拖拽排序和页面批量启动，也支持方向键、Home/End、PageUp/PageDown、Tab/Shift+Tab、Enter 和 Esc 键盘操作。Launcher 显示、搜索更新或切换分类后默认没有选中项；首次按导航键才显示条目焦点轮廓，之后 `Enter`、`F2` 和 `Delete` 才作用于该条目。鼠标滚轮在主界面任意区域切换分类，超出单屏容量的条目使用 `PageUp`/`PageDown` 浏览并保持键盘焦点可见。直接输入字符或按 `Ctrl+F` 可打开跨分类搜索，全部结果按匹配质量与已持久化的使用统计稳定排序并支持键盘分页。双击 Grid 不执行操作；使用空槽菜单或按 `Insert` 可打开统一的原生项目编辑器，按 `F2` 可编辑当前条目。右键菜单已接入启动、管理员启动、打开位置、复制、插入、移动分类、删除和属性；`Delete` 可删除焦点条目，删除确认默认选择“否”。设置和项目编辑器使用 Windows 默认浅色原生外观，主窗与搜索窗使用固定内置深色视觉。条目可在当前 Grid 内拖拽排序，也可精确拖到其他 Tab 与 Grid 槽位；目标位置会高亮并随其他修改一起持久化。文件、文件夹、`.exe`、`.lnk` 与 URL 可直接拖入当前分类，批量顺序会保留，完全重复时默认跳过。程序、文件、文件夹和快捷方式图标由 Windows Shell 在后台提取并通过 WIC/Direct2D 显示；提取失败时回退到首字符占位。修改会立即刷新 Grid、搜索索引与 UI Automation 树，并在后台串行、原子地写入数据文件。
+<p align="center">
+  <img src="docs/images/launcher-custom.png" alt="HLaunch 自制工具分类" width="318">
+  <img src="docs/images/launcher-development.png" alt="HLaunch 开发工具分类" width="318">
+</p>
 
-数据目录默认创建在 `HLaunch.exe` 同目录的 `data`；启动时会验证目录及已有配置文件可读写，无法使用时自动回退 `%LOCALAPPDATA%\HLaunch`。
+## ✨ 功能亮点
 
-设置窗口使用“常规 / 唤起”双页签和统一的“确定 / 取消 / 应用”操作区；支持 30%–100% 主窗口透明度、全局快捷键重绑、八方向边缘热区、多显示器模式、边缘宽度、角落大小、停留/采样/冷却时间、全屏抑制、当前用户开机启动和诊断日志启停。主窗口使用固定内置深色视觉；材质与 Grid 行列保留为配置及诊断能力，不提供主题管理。EXE Manifest 已启用 Common Controls v6，提示与确认优先使用 `TaskDialogIndirect`，缺少 v6 能力时安全回退。自绘窗口和原生编辑窗统一读取 Windows 消息字体，并在系统颜色、字体、高对比度、DWM 合成或颜色变化时即时刷新；高对比度会使用系统色并临时关闭透明材质。进程使用稳定的 `Hunlongyu.HLaunch` AppUserModelID。
+- **集中启动**：应用、文件、文件夹、快捷方式和网址，一个面板就够。
+- **直观整理**：拖入即可添加；自由调整图标位置、跨分类移动和分类顺序，拖动窗口边缘增减网格行列。
+- **随手唤起**：默认 `Alt+Space` 显示或收起面板，也可开启屏幕边缘、角落停留唤起。
+- **快速查找**：直接输入名称，跨分类搜索；支持方向键选择和回车启动。
+- **按需呈现**：内置深色界面，可调整背景效果与透明度，支持窗口置顶、多显示器和不同屏幕缩放。
+- **本地便携**：配置保存在本机，无账号、无遥测；可通过托盘菜单开启开机自启。
 
-发生启动或运行问题时，优先在 `HLaunch.exe` 同目录下的 `data\logs` 查看最新日志；若软件目录没有读写权限，则查看 `%LOCALAPPDATA%\HLaunch\logs`。日志不记录条目名称、目标和参数。每个日志最多 2 MiB，最多保留 5 个，并自动清理超过 7 天的文件。
+## 🚀 快速上手
 
-## 准备构建环境
+1. 将 `HLaunch.exe` 放到常用文件夹，双击运行。
+2. 按 `Alt+Space` 唤出面板，把应用、文件或快捷方式拖进网格。
+3. 单击图标启动项目；右键管理项目和分类。
+4. 右键托盘图标打开“设置”，修改快捷键、开启边缘唤起或调整外观。
 
-在 MSVC x64 开发者终端中运行：
+边缘唤起默认关闭，开启后默认避让全屏应用。点击面板关闭按钮只会收起窗口；退出程序请使用托盘菜单。
+
+## ⌨️ 常用操作
+
+除全局唤起快捷键外，以下操作均在面板内使用。
+
+| 操作 | 快捷键 / 鼠标 |
+| --- | --- |
+| 显示 / 收起面板 | `Alt+Space`（可修改） |
+| 搜索所有分类 | 直接输入，或 `Ctrl+F` |
+| 选择 / 启动项目 | 方向键 / `Enter` |
+| 切换分类 | 滚轮，或 `Tab` / `Shift+Tab` |
+| 浏览上一页 / 下一页 | `PageUp` / `PageDown` |
+| 添加 / 编辑选中项目 | `Insert` / `F2` |
+| 切换窗口置顶 | `Ctrl+Space` |
+| 收起面板 | `Esc`（搜索时先清空关键词） |
+
+## 📁 数据与系统要求
+
+配置和项目默认保存在程序旁的 `data` 文件夹；目录不可读写时，自动使用 `%LOCALAPPDATA%\HLaunch`。备份时复制实际使用的数据文件夹即可。便携目录内的应用支持相对路径，方便随文件夹一起迁移。
+
+支持 **Windows 11 x64**；Windows 10 x64 仅尽力兼容。
+
+<details>
+<summary>🛠️ 从源码构建</summary>
+
+准备支持 C++23 的 MSVC、Windows SDK、CMake 3.28+ 和 Ninja，在 MSVC x64 开发者终端运行：
 
 ```powershell
-cmake --preset msvc-debug
-cmake --build --preset msvc-debug
-ctest --preset msvc-debug
+cmake --preset msvc-release
+cmake --build --preset msvc-release
 ```
 
-CMake 会通过 FetchContent 获取固定 revision 的 WIL、Glaze 和测试专用 doctest。
+首次配置会联网获取构建依赖。生成文件：`out/build/msvc-release/src/HLaunch.exe`。
 
-面向 AI 和开发者的详细约束、模块边界及待决事项见 [`docs/ai/README.md`](docs/ai/README.md)。
+开发文档见 [docs/ai/README.md](docs/ai/README.md)。
+
+</details>
