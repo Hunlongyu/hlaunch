@@ -7,12 +7,14 @@
 <p align="center">Your everyday apps, files, and websites, always within reach.</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Windows_11-x64-0078D4?style=flat-square" alt="Windows 11 x64">
+  <img src="https://img.shields.io/badge/Windows-x64%20%7C%20x86%20%7C%20ARM64-0078D4?style=flat-square" alt="Windows x64, x86, ARM64">
   <img src="https://img.shields.io/badge/Portable-Single_EXE-16A34A?style=flat-square" alt="Portable single executable">
   <img src="https://img.shields.io/badge/Offline-Local_only-7C3AED?style=flat-square" alt="Offline and local">
 </p>
 
 <p align="center"><a href="README.md">简体中文</a> · <strong>English</strong></p>
+
+<p align="center"><a href="https://github.com/Hunlongyu/hlaunch/releases">Releases</a> · <a href="CHANGELOG.md">Changelog</a></p>
 
 HLaunch is a native Windows grid launcher. Organize your everyday shortcuts with icons and tabs, bring them up with a hotkey, and type to search. It runs as a single `HLaunch.exe`, with no installation or additional runtime required.
 
@@ -60,19 +62,18 @@ Except for the global activation hotkey, these shortcuts apply while the panel i
 
 Settings and items are stored in the `data` folder beside the executable. If that location cannot be read or written, HLaunch uses `%LOCALAPPDATA%\HLaunch` instead. Copy the active data folder to back it up. Apps inside the portable folder support relative paths, so they can move with the folder.
 
-Supports **Windows 11 x64**. Windows 10 x64 compatibility is provided on a best-effort basis.
+Primarily targets **Windows 11**, with **x64, x86, and ARM64** build targets. Windows 10 compatibility is provided on a best-effort basis.
 
 <details>
 <summary>🛠️ Build from source</summary>
 
-Install MSVC with C++23 support, the Windows SDK, CMake 3.28+, and Ninja. Run in an MSVC x64 developer terminal:
+Install MSVC with C++23 support and the desired architecture tools, the Windows SDK, CMake 3.28+, Ninja, and PowerShell 7. Run:
 
 ```powershell
-cmake --preset msvc-release
-cmake --build --preset msvc-release
+pwsh -File scripts/build-release.ps1 -Architecture x64
 ```
 
-The first configuration downloads build dependencies. Output: `out/build/msvc-release/src/HLaunch.exe`.
+You can also select `x86` or `arm64`. The first configuration downloads build dependencies. Verified executables are placed in `out/release/`.
 
 See [developer documentation](docs/ai/README.md) for more details (in Chinese).
 

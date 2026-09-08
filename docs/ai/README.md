@@ -22,6 +22,7 @@
 | 主窗口固定视觉、系统材质和渲染资源 | `launcher-ui.md` |
 | Shell、拖放、托盘、单实例和启动 | `windows-integration.md` |
 | 编译器、CMake、依赖和编码规范 | `engineering.md` |
+| 版本递增、更新日志、标签和 GitHub Releases | `releasing.md` |
 | 测试、性能、日志、崩溃和安全 | `quality.md` |
 | UI Automation、键盘和高对比度 | `accessibility.md` |
 | 需求编号、验收条件和证据 | `requirements.md` |

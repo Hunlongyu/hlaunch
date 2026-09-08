@@ -7,12 +7,14 @@
 <p align="center">把常用应用、文件和网址，放进一个随手可用的启动面板。</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Windows_11-x64-0078D4?style=flat-square" alt="Windows 11 x64">
+  <img src="https://img.shields.io/badge/Windows-x64%20%7C%20x86%20%7C%20ARM64-0078D4?style=flat-square" alt="Windows x64、x86、ARM64">
   <img src="https://img.shields.io/badge/Portable-单文件-16A34A?style=flat-square" alt="便携单文件">
   <img src="https://img.shields.io/badge/Offline-纯本地-7C3AED?style=flat-square" alt="纯本地离线">
 </p>
 
 <p align="center"><strong>简体中文</strong> · <a href="README.en.md">English</a></p>
+
+<p align="center"><a href="https://github.com/Hunlongyu/hlaunch/releases">版本下载</a> · <a href="CHANGELOG.md">更新日志</a></p>
 
 HLaunch 是一款 Windows 原生网格启动器。用图标和分类整理常用项目，按下快捷键即可唤出，输入名称就能搜索。单个 `HLaunch.exe` 即可运行，无需安装或额外运行库。
 
@@ -60,19 +62,18 @@ HLaunch 是一款 Windows 原生网格启动器。用图标和分类整理常用
 
 配置和项目默认保存在程序旁的 `data` 文件夹；目录不可读写时，自动使用 `%LOCALAPPDATA%\HLaunch`。备份时复制实际使用的数据文件夹即可。便携目录内的应用支持相对路径，方便随文件夹一起迁移。
 
-支持 **Windows 11 x64**；Windows 10 x64 仅尽力兼容。
+以 **Windows 11** 为主要平台，构建目标为 **x64、x86、ARM64**；Windows 10 仅尽力兼容。
 
 <details>
 <summary>🛠️ 从源码构建</summary>
 
-准备支持 C++23 的 MSVC、Windows SDK、CMake 3.28+ 和 Ninja，在 MSVC x64 开发者终端运行：
+准备支持 C++23 的 MSVC 及对应架构工具链、Windows SDK、CMake 3.28+、Ninja 和 PowerShell 7，运行：
 
 ```powershell
-cmake --preset msvc-release
-cmake --build --preset msvc-release
+pwsh -File scripts/build-release.ps1 -Architecture x64
 ```
 
-首次配置会联网获取构建依赖。生成文件：`out/build/msvc-release/src/HLaunch.exe`。
+架构也可选择 `x86` 或 `arm64`。首次配置会联网获取构建依赖；验证后的程序位于 `out/release/`。
 
 开发文档见 [docs/ai/README.md](docs/ai/README.md)。
 

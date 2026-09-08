@@ -12,7 +12,7 @@
 | 图形 | Direct2D、DirectWrite、WIC、DWM |
 | 数据 | JSON + Glaze |
 | 测试 | doctest，仅测试目标 |
-| 发布 | x64 Release，静态 CRT `/MT` |
+| 发布 | x64、x86、ARM64 Release，每种架构独立单 EXE，静态 CRT `/MT` |
 
 “单 EXE”表示不附带 VC++ Redistributable、Qt、.NET、WebView2 或第三方运行时 DLL；配置、日志和缓存是正常外部数据。
 
@@ -21,13 +21,14 @@
 ## 构建规则
 
 - `CMakeLists.txt` 是唯一权威构建定义，生成的 `.sln` 不是。
-- 根 `CMakeLists.txt` 的 `project(HLaunch VERSION ...)` 是应用版本的唯一来源；构建时同步生成 EXE `VERSIONINFO`、Manifest 并注入托盘提示。版本从 `0.1.0` 开始，每完成一项用户可见功能或 Bug 修复，在交付前递增补丁位；普通 Debug 重编译、文档整理或无行为变化的构建不得自动递增版本。
+- 根 `CMakeLists.txt` 的 `project(HLaunch VERSION ...)` 是应用版本的唯一来源；构建时同步生成 EXE `VERSIONINFO`、Manifest 并注入托盘提示。用户要求发布新版本时，默认递增一次补丁位并同步 `CHANGELOG.md`、附注标签和 GitHub Release；日常功能修改、修复、文档修改与普通提交不自动递增。流程见 `releasing.md`。
 - 使用 target-based CMake，不使用全局 `include_directories()` 或 `add_definitions()`。
 - 建议目标：`HLaunch::Core`、`HLaunch::Graphics`、`HLaunch::Platform`、`HLaunch::UI` 和最终 `HLaunch`。
 - 用 `CMAKE_CXX_STANDARD 23` 表达标准，不在文档中把 `/std:c++latest` 当成稳定 ABI/语言契约。
 - MSVC 建议启用 `/permissive- /utf-8 /W4 /EHsc /MP`；Release 可用 `/O2 /GL /LTCG /OPT:REF /OPT:ICF`，以编译器支持和测量结果为准。
 - 用 `CMAKE_MSVC_RUNTIME_LIBRARY` 设置 Release `/MT`、Debug `/MTd`。
-- 根构建在配置阶段拒绝非 x64 的 MSVC 目标；不生成 x86 或 ARM64 变体，避免产生未支持且未经验证的发布物。
+- 根构建接受 MSVC x64、x86、ARM64，拒绝其他架构；应用 Manifest 的 `processorArchitecture` 根据实际编译目标分别生成 `amd64`、`x86`、`arm64`，不可写死 x64。
+- `scripts/build-release.ps1 -Architecture x64` 自动发现 MSVC 工具链，另可选择 `x86`、`arm64`，分别在独立构建目录生成 Release，并校验 PE 架构、内嵌 Manifest、版本资源和动态 CRT 依赖。GitHub Actions 使用 `windows-2025-vs2026` 的 x64 主机交叉编译 ARM64；不能把编译结果表述为 ARM64 真机验证。
 - 构建时先通过 `vswhere.exe -prerelease` 或 VS 开发者环境发现 MSVC，不硬编码版本目录。
 - 开发基线使用 Windows SDK `10.0.26100.0` 或更新的兼容 SDK。C++/WinRT 头文件取自所选 Windows SDK，不额外引入 NuGet 包；调用可能缺失于兼容系统的 API 时必须先做运行时能力检测。
 - Ninja 必须正确记录 MSVC `/showIncludes` 头文件依赖。当前 CMake 4.3 在中文 `cl.exe` 下可能把检测前缀误解码为乱码；根构建脚本仅在识别到该已知乱码值时修正为实际中文前缀，英文工具链保持自动检测结果。修正前产生的构建目录必须执行一次完整清理重建，不能继续混用旧对象。
@@ -54,6 +55,8 @@
 Glaze 仅能出现在 `infrastructure/json` 适配层。持久化 DTO 与领域对象分离，字段名通过专用 DTO 或显式 metadata 固定，避免 C++ 成员重命名意外改变磁盘格式。解析选项和错误转换集中管理；为兼容同 schema 的扩展字段，必须显式设置 `error_on_unknown_keys=false`，不能依赖 Glaze 默认值。配置语料覆盖字段乱序、缺失、未知字段、坏 UTF-8、损坏输入和迁移。
 
 新增依赖需要说明：Windows SDK 是否已有能力、自己实现的风险、维护成本、静态链接能力、运行时影响、许可证和二进制体积。依赖必须由适配层隔离。
+
+发布工具仅使用 Python 标准库、PowerShell、MSVC、CMake、Git 和 GitHub CLI。GitHub Actions 的 checkout/upload-artifact/download-artifact 固定到完整提交 SHA；它们只在 CI 使用，不进入应用运行时，也不改变程序纯本地离线的边界。
 
 ## 窗口效果
 

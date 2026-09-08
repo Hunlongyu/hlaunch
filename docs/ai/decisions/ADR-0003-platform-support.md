@@ -1,6 +1,6 @@
 # ADR-0003：Windows 支持范围
 
-- 状态：已接受
+- 状态：架构范围已被 `ADR-0007-tagged-multiarch-release.md` 取代；SDK 基线及 Windows 10 尽力兼容原则保留
 - 日期：2026-08-20
 - 补充日期：2026-08-29
 

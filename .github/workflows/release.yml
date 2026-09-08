@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event.deleted == false
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test release tooling
+        run: python3 -m unittest discover -s tests -p test_release.py -v
+      - name: Validate tag, version and changelog
+        id: metadata
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/release.py validate --tag "$RELEASE_TAG" --github-output "$GITHUB_OUTPUT"
+
+  build:
+    needs: validate
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, x86, arm64]
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and verify the executable
+        shell: pwsh
+        run: ./scripts/build-release.ps1 -Architecture '${{ matrix.arch }}' -ExpectedVersion $env:RELEASE_VERSION
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: HLaunch-${{ needs.validate.outputs.version }}-${{ matrix.arch }}
+          path: out/release/HLaunch-${{ needs.validate.outputs.version }}-${{ matrix.arch }}.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: HLaunch-${{ needs.validate.outputs.version }}-*
+          path: out/release
+          merge-multiple: true
+      - name: Verify complete asset set and extract release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 scripts/release.py checksums --directory out/release
+          python3 scripts/release.py validate --tag "$RELEASE_TAG" --notes-output out/release-notes.md
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: >-
+          gh release create "$RELEASE_TAG" out/release/*.exe out/release/SHA256SUMS.txt
+          --verify-tag --title "HLaunch $RELEASE_TAG" --notes-file out/release-notes.md
