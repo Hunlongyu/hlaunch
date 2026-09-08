@@ -4,6 +4,8 @@
 
 必须区分：静态检查、编译、单元测试、集成测试、运行验证、性能测量和多设备/多显示器验证。完成较低等级不能宣称较高等级已通过。
 
+2026-09-08 首次 GitHub Release 验证：`v0.1.20` 标签指向提交 `8c39a77c7fef093d97f23b169c9ab25f42755383`，[Actions 34184056371](https://github.com/Hunlongyu/hlaunch/actions/runs/34184056371) 的版本校验、x64/x86/ARM64 构建及发布全部成功。已从 [Release](https://github.com/Hunlongyu/hlaunch/releases/tag/v0.1.20) 回读三份 EXE 与 `SHA256SUMS.txt`，核对资产集合、大小、SHA-256、PE Machine、内嵌 Manifest 的架构及版本、FileVersion/ProductVersion 0.1.20、无动态 CRT 导入，以及 Release 正文与 `CHANGELOG.md` 一致。x64、x86、ARM64 文件分别为 1,063,936、916,992、1,075,712 字节。ARM64 证据为交叉编译及二进制静态核验，不包含 ARM64 真机运行。
+
 2026-09-08 三架构发布流程：新增标签、CMake 版本和日志一致性校验，版本准备/拒绝非法标签/日志隔离/版本溢出/三架构资产集合 5 项 Python 测试通过，actionlint 1.7.12 工作流检查通过。本机 MSVC 19.51 的独立 x64、x86 Release 构建均通过且各 11/11 项非交互桌面 CTest 通过；文件分别为 1,063,936 和 916,992 字节，PE Machine、内嵌 Manifest、0.1.19 版本资源与无动态 CRT 导入检查通过。该版本号仅是本机验证基线，本次没有递增版本或发布标签。本机未安装 ARM64 工具链，ARM64 交叉编译与 GitHub Release 端到端结果待首次正式标签运行验证；ARM64 真机及四项桌面相关测试本轮未执行。
 
 当前验证证据（2026-08-28）：MSVC x64 Debug 的 15 个 CTest 目标全部通过，覆盖依赖、数据编解码与存储、日志、搜索、条目添加/编辑/删除/重排、Shell/WIC 图标提取与后台回调、OLE 拖放、窗口与输入、快捷键、边缘唤起、当前用户开机启动、托盘和 Shell 启动。Launcher 窗口集成测试验证 `Insert` 添加、`F2` 编辑、`Delete` 取消与确认、相邻焦点、全部编辑字段、同 Tab 鼠标重排、跨 Tab 拖动、边缘用户设置、开机启动设置和稳定 ID；Core 测试覆盖最终索引语义、稳定 `gridSlot`、远端空槽精确放置、占用槽连续顺移、批量目标槽顺序、跨 Tab 精确位置及无效移动不修改文档。配置测试覆盖材质、透明度、Grid 行列、默认值、往返、非法范围和旧条目缺失 `gridSlot` 的兼容读取。主题、背景图、自定义字体和组件样式模块及其测试已经移除。
