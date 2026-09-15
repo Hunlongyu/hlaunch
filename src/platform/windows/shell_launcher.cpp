@@ -196,7 +196,10 @@ std::expected<ShellLaunchResult, ShellLaunchError> launchItem(
     std::wstring launchTarget = std::move(*target);
     std::wstring launchParameters = std::move(*parameters);
     int showCommand = SW_SHOWNORMAL;
-    if (item.type == core::ItemType::Shortcut) {
+    // Let Shell honor the complete link (package identity, elevation, show mode)
+    // unless the caller needs to override its launch properties.
+    if (item.type == core::ItemType::Shortcut
+        && (!item.arguments.empty() || !workingDirectory.empty() || item.runAsAdministrator)) {
         if (auto shortcut = tryResolveShortcut(owner, launchTarget)) {
             launchTarget = std::move(shortcut->target);
             if (!shortcut->parameters.empty()) {

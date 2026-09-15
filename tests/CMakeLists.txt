@@ -177,6 +177,7 @@ target_link_libraries(
 add_test(NAME PLAT-TRAY-001.lifecycle COMMAND hlaunch_tray_icon_tests)
 
 add_executable(hlaunch_shell_probe WIN32 shell_launch_probe.cpp)
+add_dependencies(hlaunch_drop_item_resolver_tests hlaunch_shell_probe)
 
 target_link_libraries(
     hlaunch_shell_probe

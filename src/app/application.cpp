@@ -289,7 +289,8 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
                 .executableDirectory = executablePath_.parent_path(),
                 .portable = paths->portable,
             },
-            config_.appearance.gridColumns, config_.appearance.gridRows, {})) {
+            config_.appearance.gridColumns, config_.appearance.gridRows, {},
+            paths->root / L"shortcuts")) {
         infrastructure::logging::writeSystemError(infrastructure::logging::Level::Error,
                                                   "launcher_window_create_failed", GetLastError());
         showStartupError(L"无法创建 HLaunch 窗口。");

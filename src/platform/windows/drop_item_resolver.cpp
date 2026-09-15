@@ -1,4 +1,5 @@
 #include "platform/windows/drop_item_resolver.h"
+#include "platform/windows/shortcut_importer.h"
 
 #include <Shlwapi.h>
 
@@ -61,7 +62,8 @@ std::wstring shortenedName(std::wstring value)
     return value;
 }
 
-std::optional<core::LaunchItem> resolvePath(const std::wstring &value)
+std::optional<core::LaunchItem> resolvePath(
+    const std::wstring &value, const std::filesystem::path& shortcutDirectory)
 {
     const DWORD attributes = GetFileAttributesW(value.c_str());
     if (attributes == INVALID_FILE_ATTRIBUTES)
@@ -99,11 +101,15 @@ std::optional<core::LaunchItem> resolvePath(const std::wstring &value)
     {
         return std::nullopt;
     }
-    return core::LaunchItem{
+    core::LaunchItem item{
         .type = type,
         .name = *name,
         .target = *target,
     };
+    if (type == core::ItemType::Shortcut) {
+        return importShortcut(std::move(item), path, shortcutDirectory);
+    }
+    return item;
 }
 
 bool hasBlockedScheme(const std::wstring &value)
@@ -152,7 +158,8 @@ std::optional<core::LaunchItem> resolveUrl(const std::wstring &value)
 
 } // namespace
 
-DropImportResult resolveDroppedSources(const DropImportRequest &request)
+DropImportResult resolveDroppedSources(
+    const DropImportRequest &request, const std::filesystem::path& shortcutDirectory)
 {
     DropImportResult result{
         .targetTabIndex = request.targetTabIndex,
@@ -161,7 +168,7 @@ DropImportResult resolveDroppedSources(const DropImportRequest &request)
     result.items.reserve(request.sources.size());
     for (const auto &source : request.sources)
     {
-        auto item = source.kind == DroppedSourceKind::Path ? resolvePath(source.value)
+        auto item = source.kind == DroppedSourceKind::Path ? resolvePath(source.value, shortcutDirectory)
                                                            : resolveUrl(source.value);
         if (!item)
         {
@@ -195,8 +202,10 @@ std::optional<core::LaunchItem> makeDropLaunchItem(
     return appendedPath ? std::optional<core::LaunchItem>{std::move(item)} : std::nullopt;
 }
 
-DropItemResolver::DropItemResolver(CompletionHandler completionHandler)
-    : completionHandler_(std::move(completionHandler)), thread_([this] { run(); })
+DropItemResolver::DropItemResolver(CompletionHandler completionHandler,
+                                 std::filesystem::path shortcutDirectory)
+    : completionHandler_(std::move(completionHandler)),
+      shortcutDirectory_(std::move(shortcutDirectory)), thread_([this] { run(); })
 {
 }
 
@@ -245,7 +254,7 @@ void DropItemResolver::run() noexcept
             try {
                 DropImportResult result{};
                 try {
-                    result = resolveDroppedSources(request);
+                    result = resolveDroppedSources(request, shortcutDirectory_);
                 }
                 catch (...) {
                     result.targetTabIndex = request.targetTabIndex;

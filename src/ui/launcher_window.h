@@ -61,7 +61,8 @@ public:
         platform::windows::ItemPathContext itemPathContext = {},
         std::uint16_t gridColumns = core::defaultLauncherGridColumns,
         std::uint16_t gridRows = core::defaultLauncherGridRows,
-        LauncherMetrics metrics = {});
+        LauncherMetrics metrics = {},
+        std::filesystem::path shortcutDirectory = {});
     void setWindowEffects(const platform::windows::WindowEffects& effects);
     void refreshSystemAppearance();
     void setDocumentChangedHandler(DocumentChangedHandler handler);

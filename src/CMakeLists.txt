@@ -148,6 +148,8 @@ add_library(
         platform/windows/search_text.h
         platform/windows/shell_launcher.cpp
         platform/windows/shell_launcher.h
+        platform/windows/shortcut_importer.cpp
+        platform/windows/shortcut_importer.h
         platform/windows/single_instance.cpp
         platform/windows/single_instance.h
         platform/windows/startup_registration.cpp

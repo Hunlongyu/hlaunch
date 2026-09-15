@@ -1,6 +1,6 @@
 # Windows 集成
 
-当前实现状态（2026-08-29）：已实现稳定的进程 AppUserModelID `Hunlongyu.HLaunch`、按当前用户 SID 隔离的 Named Mutex、固定类名隐藏激活窗口、`--show`、`--hide`、`--toggle` 的注册消息转发、第二实例有限重试、全局快捷键注册、`Shell_NotifyIconW` 托盘图标、条目的 `ShellExecuteExW` 启动适配、Launcher 的 OLE `IDropTarget` 注册与撤销，以及当前用户开机启动设置。快捷键可用时主实例无参数启动默认隐藏；普通手动启动在快捷键不可用且没有显式激活命令时暂时显示主窗。登录任务使用 --autostart，默认保持隐藏；仅快捷键和托盘均不可用时显示主窗保留入口。Launcher 关闭按钮只执行隐藏；未置顶且前台切换到其他进程后延迟收起，同进程的搜索、菜单和原生对话框不会触发误收起。运行期窗口置顶可由标题区或 `Ctrl+Space` 切换，启用时使用 `HWND_TOPMOST` 并阻止失焦收起，取消时恢复 `HWND_NOTOPMOST`。托盘支持显示/隐藏、直接切换开机自启、打开可复用的原生设置窗和退出，收到 `TaskbarCreated` 后重新添加。同一完整性级别下实测第二实例退出且主实例保持唯一。Shell 适配保持目标、逻辑参数和工作目录分离，支持 `open`/`runas` 并区分 UAC 取消；平台路径策略统一展开环境变量并以 EXE 目录解析条目相对路径，URL 目标保持原文，启动、图标、所在位置和复制命令不依赖当前工作目录。`.lnk` 通过 `IShellLinkW`/`IPersistFile` 解析目标、参数、工作目录和显示方式；解析失败时仍交由 Shell 直接打开原快捷方式，以保留特殊 Shell/Packaged App 快捷方式兼容。条目菜单可为单次启动强制使用 `runas`、按相同引用规则复制完整命令，并通过 `SHOpenFolderAndSelectItems` 在 Explorer 中选中非 URL 目标。拖放接收 `CF_HDROP`、浏览器 URL 剪贴板格式和 Unicode URL 文本，文件属性与 URL 分类在后台完成，结果通过窗口消息回到 UI 线程。Shell 图标服务直接解码显式 `.ico`、`.png` 和 `.svg`，从 EXE/DLL 提取图标资源，未设置或解码失败时从目标取得系统图标；结果在后台统一转换成预乘 BGRA 像素并回送 UI。不同完整性级别 UIPI 完整矩阵仍需人工验证。
+当前实现状态（2026-08-29）：已实现稳定的进程 AppUserModelID `Hunlongyu.HLaunch`、按当前用户 SID 隔离的 Named Mutex、固定类名隐藏激活窗口、`--show`、`--hide`、`--toggle` 的注册消息转发、第二实例有限重试、全局快捷键注册、`Shell_NotifyIconW` 托盘图标、条目的 `ShellExecuteExW` 启动适配、Launcher 的 OLE `IDropTarget` 注册与撤销，以及当前用户开机启动设置。快捷键可用时主实例无参数启动默认隐藏；普通手动启动在快捷键不可用且没有显式激活命令时暂时显示主窗。登录任务使用 --autostart，默认保持隐藏；仅快捷键和托盘均不可用时显示主窗保留入口。Launcher 关闭按钮只执行隐藏；未置顶且前台切换到其他进程后延迟收起，同进程的搜索、菜单和原生对话框不会触发误收起。运行期窗口置顶可由标题区或 `Ctrl+Space` 切换，启用时使用 `HWND_TOPMOST` 并阻止失焦收起，取消时恢复 `HWND_NOTOPMOST`。托盘支持显示/隐藏、直接切换开机自启、打开可复用的原生设置窗和退出，收到 `TaskbarCreated` 后重新添加。同一完整性级别下实测第二实例退出且主实例保持唯一。Shell 适配保持目标、逻辑参数和工作目录分离，支持 `open`/`runas` 并区分 UAC 取消；平台路径策略统一展开环境变量并以 EXE 目录解析条目相对路径，URL 目标保持原文，启动、图标、所在位置和复制命令不依赖当前工作目录。新拖入的普通 `.lnk` 在后台解析并保存实际启动属性，特殊链接保存到数据根 `shortcuts/`；启动快捷方式且没有条目覆盖时交给 Shell 完整打开，保留特殊 Shell/Packaged App 兼容。条目菜单可为单次启动强制使用 `runas`、按相同引用规则复制完整命令，并通过 `SHOpenFolderAndSelectItems` 在 Explorer 中选中非 URL 目标。拖放接收 `CF_HDROP`、浏览器 URL 剪贴板格式和 Unicode URL 文本，文件属性与 URL 分类在后台完成，结果通过窗口消息回到 UI 线程。Shell 图标服务直接解码显式 `.ico`、`.png` 和 `.svg`，从 EXE/DLL 提取图标资源，未设置或解码失败时从目标取得系统图标；结果在后台统一转换成预乘 BGRA 像素并回送 UI。不同完整性级别 UIPI 完整矩阵仍需人工验证。
 
 AppUserModelID 必须在创建 Launcher、搜索窗和托盘图标之前设置。失败只记录 HRESULT
 并继续运行，不能让任务栏身份能力成为启动阻断项。该 ID 是 Shell 身份契约，后续
@@ -9,7 +9,9 @@ AppUserModelID 必须在创建 Launcher、搜索窗和托盘图标之前设置�
 ## Shell 启动与图标
 
 - 使用 `ShellExecuteExW` 启动应用、文件、文件夹和 URL；管理员启动使用 `runas` verb 并处理用户取消 UAC。
-- `.lnk` 通过 `IShellLinkW`/`IPersistFile` 解析目标、快捷方式参数、工作目录和显示方式；HLaunch 条目参数追加在快捷方式参数之后，条目显式工作目录优先。解析失败时回退为直接 Shell 打开原 `.lnk`。图标可使用 `IShellItemImageFactory`、`IExtractIconW` 或 `SHGetFileInfoW`，具体选择封装在图标服务中。
+- 拖入 `.lnk` 时在后台线程初始化 COM，通过 `IShellLinkW`/`IPersistFile` 读取启动属性。能由现有条目模型完整表达的普通快捷方式直接保存实际文件/目录/程序目标、参数、工作目录、图标和管理员标志，保留链接名称；参数用带虚拟 argv[0] 的 `CommandLineToArgvW` 拆分，启动时仍按逻辑参数引用。
+- 含包身份等属性、特殊 Shell 标志、非默认显示方式、非零图标索引或无法完整解析的有效链接，按原字节保留到数据根 `shortcuts/`，不再引用拖入来源。损坏链接或无法保存副本时跳过并提示。普通和特殊链接均要求导入后删除来源 `.lnk` 不影响启动，不能以图标缓存存在代替此验证。
+- 启动 `shortcut` 且没有条目参数、工作目录或提权覆盖时直接交给 `ShellExecuteExW` 打开，保留完整 Shell 激活语义；需要覆盖时沿用解析目标、参数和显示方式的路径，条目参数追加在链接参数之后，条目工作目录优先。历史链接解析失败时仍由 Shell 打开其已保存路径。图标可使用 `IShellItemImageFactory`、`IExtractIconW` 或 `SHGetFileInfoW`，具体选择封装在图标服务中。
 - 不拼接并执行 `cmd.exe /c`。目标、参数和工作目录分别传递，错误转换为可显示的领域错误。
 - 文件系统路径在调用 Shell 或图标服务前统一展开环境变量；普通相对路径以 HLaunch EXE 目录为基准。拒绝 `C:relative` 和 `\\root-relative` 这类依赖进程状态的 Windows 路径。
 - V1 不主动枚举 Packaged App/UWP；用户已有的可启动 `.lnk` 仍可作为普通快捷方式导入。

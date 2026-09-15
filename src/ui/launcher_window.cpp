@@ -255,7 +255,8 @@ bool LauncherWindow::create(
     platform::windows::ItemPathContext itemPathContext,
     const std::uint16_t gridColumns,
     const std::uint16_t gridRows,
-    LauncherMetrics metrics)
+    LauncherMetrics metrics,
+    std::filesystem::path shortcutDirectory)
 {
     document_ = std::move(document);
     core::normalizeGridSlots(document_);
@@ -396,7 +397,7 @@ bool LauncherWindow::create(
                         reinterpret_cast<LPARAM>(payload.get()))) { // NOLINT(performance-no-int-to-ptr): Internal message transfers this heap result to the UI thread.
                     payload.release(); // NOLINT(bugprone-unused-return-value,clang-analyzer-cplusplus.NewDeleteLeaks): The posted UI message owns and deletes the result.
                 }
-            });
+            }, std::move(shortcutDirectory));
     }
     catch (...) {
         return false;

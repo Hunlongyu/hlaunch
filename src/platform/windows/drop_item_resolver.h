@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -30,7 +31,8 @@ struct DropImportResult
     bool failed{};
 };
 
-[[nodiscard]] DropImportResult resolveDroppedSources(const DropImportRequest &request);
+[[nodiscard]] DropImportResult resolveDroppedSources(
+    const DropImportRequest &request, const std::filesystem::path& shortcutDirectory = {});
 
 [[nodiscard]] std::optional<core::LaunchItem> makeDropLaunchItem(
     core::LaunchItem item,
@@ -41,7 +43,8 @@ class DropItemResolver final
   public:
     using CompletionHandler = std::function<void(DropImportResult)>;
 
-    explicit DropItemResolver(CompletionHandler completionHandler);
+    explicit DropItemResolver(CompletionHandler completionHandler,
+                              std::filesystem::path shortcutDirectory = {});
     ~DropItemResolver();
 
     DropItemResolver(const DropItemResolver &) = delete;
@@ -53,6 +56,7 @@ class DropItemResolver final
     void run() noexcept;
 
     CompletionHandler completionHandler_{};
+    std::filesystem::path shortcutDirectory_{};
     std::mutex mutex_{};
     std::condition_variable condition_{};
     std::deque<DropImportRequest> pending_{};
