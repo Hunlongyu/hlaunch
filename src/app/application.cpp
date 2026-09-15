@@ -14,6 +14,7 @@
 #include <Ole2.h>
 #include <shellapi.h>
 #include <wil/resource.h>
+#include <winrt/base.h>
 
 #include <algorithm>
 #include <exception>
@@ -27,6 +28,7 @@ namespace {
 
 constexpr UINT itemsSaveFailedMessage = WM_APP + 0x41U;
 constexpr UINT configSaveCompletedMessage = WM_APP + 0x42U;
+constexpr UINT startupCompletedMessage = WM_APP + 0x43U;
 
 std::filesystem::path executablePath()
 {
@@ -156,6 +158,10 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
     }
     singleInstance_.emplace(std::move(*acquiredInstance));
     if (!singleInstance_->isPrimary()) {
+        // A delayed logon task must not show/hide an already running instance.
+        if (options.autostart && !options.activation) {
+            return 0;
+        }
         const auto command =
             options.activation.value_or(platform::windows::ActivationCommand::Show);
         const auto notified = platform::windows::notifyPrimaryInstance(command);
@@ -383,11 +389,20 @@ int Application::run(const HINSTANCE instance, const StartupOptions& options)
                                                      : "screen_edge_service_failed");
     infrastructure::logging::write(trayStarted ? infrastructure::logging::Level::Info
                                                : infrastructure::logging::Level::Warning,
-                                   trayStarted ? "tray_icon_ready" : "tray_icon_failed");
+                                   trayStarted
+                                       ? (trayIcon_.isAdded() ? "tray_icon_ready" : "tray_icon_pending")
+                                       : "tray_icon_failed");
+
+    refreshStartupState(false, true);
+    const auto startupCleanup = wil::scope_exit([this] {
+        if (startupWorker_.joinable()) {
+            startupWorker_.join();
+        }
+    });
 
     if (options.activation) {
         execute(*options.activation);
-    } else if (options.showSearch || !hotkeyAvailable) {
+    } else if (options.showSearch || (!hotkeyAvailable && (!options.autostart || !trayStarted))) {
         // Keep the application reachable while tray and settings UI are still
         // pending.
         execute(platform::windows::ActivationCommand::Show);
@@ -510,6 +525,10 @@ LRESULT Application::handleActivationMessage(const UINT message, const WPARAM wP
         handleConfigSaveCompletions();
         return 0;
     }
+    if (message == startupCompletedMessage) {
+        handleStartupCompletion();
+        return 0;
+    }
     if (message == WM_HOTKEY && hotkey_.handlesMessage(wParam)) {
         execute(platform::windows::ActivationCommand::Toggle);
         return 0;
@@ -527,18 +546,10 @@ LRESULT Application::handleActivationMessage(const UINT message, const WPARAM wP
         launcher_.refreshSystemAppearance();
         settings_.refreshSystemAppearance();
     }
-    std::optional<bool> trayStartupState{};
+    const auto trayStartupState = startupChanging_ ? std::nullopt : startupState_;
     if (message == platform::windows::trayIconCallbackMessage
         && (LOWORD(lParam) == WM_CONTEXTMENU || LOWORD(lParam) == WM_RBUTTONUP)) {
-        const auto startupState = platform::windows::isStartupEnabled();
-        if (startupState) {
-            trayStartupState = *startupState;
-        } else {
-            infrastructure::logging::writeSystemError(
-                infrastructure::logging::Level::Warning,
-                "startup_registration_query_failed",
-                startupState.error().systemCode);
-        }
+        refreshStartupState();
     }
     if (const auto trayCommand = trayIcon_.handleMessage(
             message, wParam, lParam, launcher_.isVisible(), trayStartupState)) {
@@ -641,47 +652,113 @@ void Application::showSettings()
 
 void Application::toggleStartup()
 {
-    const auto startupState = platform::windows::isStartupEnabled();
-    if (!startupState) {
-        infrastructure::logging::writeSystemError(
-            infrastructure::logging::Level::Error,
-            "startup_registration_query_failed",
-            startupState.error().systemCode);
-        ui::showTaskMessage(
-            launcher_.handle(),
-            L"HLaunch 开机自启",
-            L"无法读取当前用户开机自启状态。",
-            ui::TaskDialogIcon::Error,
-            L"系统错误码：" + std::to_wstring(startupState.error().systemCode));
+    refreshStartupState(true);
+}
+
+void Application::refreshStartupState(const bool toggle, const bool migrate)
+{
+    if (startupBusy_) {
+        if (toggle) {
+            startupTogglePending_ = true;
+            startupChanging_ = true;
+        }
         return;
     }
-
-    const auto result = changeStartup(!*startupState);
-    if (!result) {
-        ui::showTaskMessage(
-            launcher_.handle(),
-            L"HLaunch 开机自启",
-            L"无法更新开机自启设置。",
-            ui::TaskDialogIcon::Error,
-            result.error());
+    try {
+        const auto path = executablePath_;
+        const auto portable = forcePortable_;
+        const auto notificationWindow = activationWindow_;
+        startupBusy_ = true;
+        startupChanging_ = toggle;
+        startupWorker_ = std::jthread([this, path, portable, notificationWindow, toggle, migrate] {
+            StartupCompletion completion{.notifyError = toggle || migrate};
+            try {
+                const auto initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+                winrt::check_hresult(initialized);
+                const auto comCleanup = wil::scope_exit([] { CoUninitialize(); });
+                if (migrate) {
+                    if (const auto result = platform::windows::migrateStartupRegistration(path, portable);
+                        !result) {
+                        completion.changeError = result.error();
+                    }
+                }
+                completion.state = platform::windows::isStartupEnabled(path);
+                if (toggle && completion.state) {
+                    const auto result = platform::windows::setStartupEnabled(
+                        path, portable, !*completion.state);
+                    if (!result) {
+                        completion.changeError = result.error();
+                    }
+                    completion.state = platform::windows::isStartupEnabled(path);
+                }
+            } catch (...) {
+                completion.state = std::unexpected(platform::windows::StartupRegistrationError{
+                    static_cast<DWORD>(winrt::to_hresult())});
+            }
+            try {
+                {
+                    const std::scoped_lock lock{startupCompletionMutex_};
+                    startupCompletion_ = completion;
+                }
+                if (!PostMessageW(notificationWindow, startupCompletedMessage, 0, 0)) {
+                    infrastructure::logging::writeSystemError(infrastructure::logging::Level::Warning,
+                        "startup_completion_post_failed", GetLastError());
+                }
+            } catch (...) {
+                OutputDebugStringW(L"HLaunch startup completion delivery failed.\n");
+            }
+        });
+    } catch (...) {
+        startupBusy_ = false;
+        startupChanging_ = false;
+        startupState_.reset();
+        infrastructure::logging::write(infrastructure::logging::Level::Error,
+                                       "startup_worker_create_failed");
+        if (toggle) {
+            ui::showTaskMessage(launcher_.handle(), L"HLaunch 开机自启",
+                L"无法启动开机自启设置操作，请稍后重试。", ui::TaskDialogIcon::Error);
+        }
     }
 }
 
-std::expected<void, std::wstring> Application::changeStartup(const bool enabled)
+void Application::handleStartupCompletion()
 {
-    const auto result =
-        platform::windows::setStartupEnabled(executablePath_, forcePortable_, enabled);
-    if (!result) {
-        infrastructure::logging::writeSystemError(infrastructure::logging::Level::Error,
-                                                  "startup_registration_change_failed",
-                                                  result.error().systemCode);
-        return std::unexpected(L"无法更新开机启动设置，系统错误码：" +
-                               std::to_wstring(result.error().systemCode));
+    if (startupWorker_.joinable()) {
+        startupWorker_.join();
     }
-    infrastructure::logging::write(infrastructure::logging::Level::Info,
-                                   enabled ? "startup_registration_enabled"
-                                           : "startup_registration_disabled");
-    return {};
+    std::optional<StartupCompletion> completion;
+    {
+        const std::scoped_lock lock{startupCompletionMutex_};
+        completion.swap(startupCompletion_);
+    }
+    startupBusy_ = false;
+    startupChanging_ = false;
+    if (!completion) {
+        return;
+    }
+    startupState_ = completion->state
+        ? std::optional<bool>{*completion->state} : std::nullopt;
+    auto error = completion->changeError;
+    if (!error && !completion->state) {
+        error = completion->state.error();
+    }
+    if (error) {
+        infrastructure::logging::writeSystemError(infrastructure::logging::Level::Warning,
+            "startup_task_operation_failed", error->systemCode);
+        if (completion->notifyError) {
+            ui::showTaskMessage(launcher_.handle(), L"HLaunch 开机自启",
+                L"无法更新登录计划任务。", ui::TaskDialogIcon::Error,
+                L"请检查 Windows 任务计划程序服务与任务权限后重试。\n系统错误码：" +
+                    std::to_wstring(error->systemCode));
+        }
+    } else {
+        infrastructure::logging::write(infrastructure::logging::Level::Info,
+            *completion->state ? "startup_task_enabled" : "startup_task_disabled");
+    }
+    if (startupTogglePending_) {
+        startupTogglePending_ = false;
+        refreshStartupState(true);
+    }
 }
 
 std::expected<void, std::wstring> Application::changeDiagnostics(const bool enabled)

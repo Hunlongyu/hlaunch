@@ -7,6 +7,7 @@
 #include "platform/windows/global_hotkey.h"
 #include "platform/windows/screen_edge_activation.h"
 #include "platform/windows/single_instance.h"
+#include "platform/windows/startup_registration.h"
 #include "platform/windows/tray_icon.h"
 #include "ui/launcher_window.h"
 #include "ui/settings_window.h"
@@ -20,6 +21,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 
 namespace hlaunch::app {
 
@@ -39,11 +41,12 @@ private:
     void launch(const core::LaunchItem& item);
     void showSettings();
     void toggleStartup();
+    void refreshStartupState(bool toggle = false, bool migrate = false);
+    void handleStartupCompletion();
     [[nodiscard]] bool changeAppearance(const core::AppearanceConfig& appearance);
     [[nodiscard]] std::expected<void, std::wstring> changeActivation(
         const core::ActivationConfig& activation);
     [[nodiscard]] std::expected<void, std::wstring> changeDiagnostics(bool enabled);
-    [[nodiscard]] std::expected<void, std::wstring> changeStartup(bool enabled);
     [[nodiscard]] bool applyDiagnosticLogging(bool enabled);
     [[nodiscard]] bool submitConfigSnapshot(core::ApplicationConfig snapshot);
     void handleConfigSaveCompletions();
@@ -71,6 +74,19 @@ private:
     platform::windows::GlobalHotkey hotkey_{};
     platform::windows::ScreenEdgeActivation screenEdge_{};
     platform::windows::TrayIcon trayIcon_{};
+    struct StartupCompletion {
+        std::expected<bool, platform::windows::StartupRegistrationError> state{false};
+        std::optional<platform::windows::StartupRegistrationError> changeError{};
+        bool notifyError{};
+    };
+    std::optional<bool> startupState_{};
+    bool startupBusy_{};
+    bool startupChanging_{};
+    bool startupTogglePending_{};
+    std::mutex startupCompletionMutex_{};
+    std::optional<StartupCompletion> startupCompletion_{};
+    // Declared last so it joins before any captured state is destroyed.
+    std::jthread startupWorker_{};
 };
 
 } // namespace hlaunch::app

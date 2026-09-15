@@ -12,6 +12,25 @@
 
 namespace {
 
+unsigned pendingAddFailures{};
+unsigned addCalls{};
+unsigned deleteCalls{};
+
+BOOL WINAPI delayedExplorerNotify(const DWORD message, PNOTIFYICONDATAW)
+{
+    if (message == NIM_ADD) {
+        ++addCalls;
+        if (pendingAddFailures != 0) {
+            --pendingAddFailures;
+            return FALSE;
+        }
+    }
+    if (message == NIM_DELETE) {
+        ++deleteCalls;
+    }
+    return TRUE;
+}
+
 class TestWindow final {
 public:
     TestWindow()
@@ -86,6 +105,39 @@ TEST_CASE("PLAT-TRAY-001 tooltip shows the product name and current version")
     const auto tooltip = hlaunch::platform::windows::trayIconTooltipText();
     CHECK(tooltip.starts_with(L"HLaunch\nv"));
     CHECK(tooltip.substr(tooltip.find(L'v') + 1U) == hlaunch::applicationVersionWide);
+}
+
+TEST_CASE("PLAT-TRAY-001 early logon retries without blocking and survives Explorer recovery")
+{
+    using namespace hlaunch::platform::windows;
+    TestWindow window;
+    REQUIRE(window.get());
+    pendingAddFailures = 2;
+    addCalls = deleteCalls = 0;
+    TrayIcon tray{delayedExplorerNotify};
+    REQUIRE(tray.start(window.get(), LoadIconW(nullptr, IDI_APPLICATION)));
+    CHECK_FALSE(tray.isAdded());
+    CHECK(addCalls == 1);
+    static_cast<void>(tray.handleMessage(WM_TIMER, trayIconRetryTimerId, 0, false));
+    CHECK_FALSE(tray.isAdded());
+    static_cast<void>(tray.handleMessage(WM_TIMER, trayIconRetryTimerId, 0, false));
+    CHECK(tray.isAdded());
+    CHECK(addCalls == 3);
+    static_cast<void>(tray.handleMessage(WM_TIMER, trayIconRetryTimerId, 0, false));
+    CHECK(addCalls == 3);
+
+    pendingAddFailures = 1;
+    static_cast<void>(tray.handleMessage(tray.taskbarCreatedMessage(), 0, 0, false));
+    CHECK_FALSE(tray.isAdded());
+    static_cast<void>(tray.handleMessage(WM_TIMER, trayIconRetryTimerId, 0, false));
+    CHECK(tray.isAdded());
+    CHECK(addCalls == 5);
+    tray.stop();
+    CHECK(deleteCalls == 1);
+    static_cast<void>(tray.handleMessage(WM_TIMER, trayIconRetryTimerId, 0, false));
+    CHECK_FALSE(tray.isAdded());
+    CHECK(addCalls == 5);
+    CHECK_FALSE(tray.start(nullptr, nullptr));
 }
 
 TEST_CASE("PLAT-TRAY-001 context menu exposes checkable startup state")

@@ -1,6 +1,6 @@
 # Windows 集成
 
-当前实现状态（2026-08-29）：已实现稳定的进程 AppUserModelID `Hunlongyu.HLaunch`、按当前用户 SID 隔离的 Named Mutex、固定类名隐藏激活窗口、`--show`、`--hide`、`--toggle` 的注册消息转发、第二实例有限重试、全局快捷键注册、`Shell_NotifyIconW` 托盘图标、条目的 `ShellExecuteExW` 启动适配、Launcher 的 OLE `IDropTarget` 注册与撤销，以及当前用户开机启动设置。快捷键可用时主实例无参数启动默认隐藏；快捷键禁用或注册失败且没有显式启动命令时暂时显示主窗。Launcher 关闭按钮只执行隐藏；未置顶且前台切换到其他进程后延迟收起，同进程的搜索、菜单和原生对话框不会触发误收起。运行期窗口置顶可由标题区或 `Ctrl+Space` 切换，启用时使用 `HWND_TOPMOST` 并阻止失焦收起，取消时恢复 `HWND_NOTOPMOST`。托盘支持显示/隐藏、直接切换开机自启、打开可复用的原生设置窗和退出，收到 `TaskbarCreated` 后重新添加。同一完整性级别下实测第二实例退出且主实例保持唯一。Shell 适配保持目标、逻辑参数和工作目录分离，支持 `open`/`runas` 并区分 UAC 取消；平台路径策略统一展开环境变量并以 EXE 目录解析条目相对路径，URL 目标保持原文，启动、图标、所在位置和复制命令不依赖当前工作目录。`.lnk` 通过 `IShellLinkW`/`IPersistFile` 解析目标、参数、工作目录和显示方式；解析失败时仍交由 Shell 直接打开原快捷方式，以保留特殊 Shell/Packaged App 快捷方式兼容。条目菜单可为单次启动强制使用 `runas`、按相同引用规则复制完整命令，并通过 `SHOpenFolderAndSelectItems` 在 Explorer 中选中非 URL 目标。拖放接收 `CF_HDROP`、浏览器 URL 剪贴板格式和 Unicode URL 文本，文件属性与 URL 分类在后台完成，结果通过窗口消息回到 UI 线程。Shell 图标服务直接解码显式 `.ico`、`.png` 和 `.svg`，从 EXE/DLL 提取图标资源，未设置或解码失败时从目标取得系统图标；结果在后台统一转换成预乘 BGRA 像素并回送 UI。不同完整性级别 UIPI 完整矩阵仍需人工验证。
+当前实现状态（2026-08-29）：已实现稳定的进程 AppUserModelID `Hunlongyu.HLaunch`、按当前用户 SID 隔离的 Named Mutex、固定类名隐藏激活窗口、`--show`、`--hide`、`--toggle` 的注册消息转发、第二实例有限重试、全局快捷键注册、`Shell_NotifyIconW` 托盘图标、条目的 `ShellExecuteExW` 启动适配、Launcher 的 OLE `IDropTarget` 注册与撤销，以及当前用户开机启动设置。快捷键可用时主实例无参数启动默认隐藏；普通手动启动在快捷键不可用且没有显式激活命令时暂时显示主窗。登录任务使用 --autostart，默认保持隐藏；仅快捷键和托盘均不可用时显示主窗保留入口。Launcher 关闭按钮只执行隐藏；未置顶且前台切换到其他进程后延迟收起，同进程的搜索、菜单和原生对话框不会触发误收起。运行期窗口置顶可由标题区或 `Ctrl+Space` 切换，启用时使用 `HWND_TOPMOST` 并阻止失焦收起，取消时恢复 `HWND_NOTOPMOST`。托盘支持显示/隐藏、直接切换开机自启、打开可复用的原生设置窗和退出，收到 `TaskbarCreated` 后重新添加。同一完整性级别下实测第二实例退出且主实例保持唯一。Shell 适配保持目标、逻辑参数和工作目录分离，支持 `open`/`runas` 并区分 UAC 取消；平台路径策略统一展开环境变量并以 EXE 目录解析条目相对路径，URL 目标保持原文，启动、图标、所在位置和复制命令不依赖当前工作目录。`.lnk` 通过 `IShellLinkW`/`IPersistFile` 解析目标、参数、工作目录和显示方式；解析失败时仍交由 Shell 直接打开原快捷方式，以保留特殊 Shell/Packaged App 快捷方式兼容。条目菜单可为单次启动强制使用 `runas`、按相同引用规则复制完整命令，并通过 `SHOpenFolderAndSelectItems` 在 Explorer 中选中非 URL 目标。拖放接收 `CF_HDROP`、浏览器 URL 剪贴板格式和 Unicode URL 文本，文件属性与 URL 分类在后台完成，结果通过窗口消息回到 UI 线程。Shell 图标服务直接解码显式 `.ico`、`.png` 和 `.svg`，从 EXE/DLL 提取图标资源，未设置或解码失败时从目标取得系统图标；结果在后台统一转换成预乘 BGRA 像素并回送 UI。不同完整性级别 UIPI 完整矩阵仍需人工验证。
 
 AppUserModelID 必须在创建 Launcher、搜索窗和托盘图标之前设置。失败只记录 HRESULT
 并继续运行，不能让任务栏身份能力成为启动阻断项。该 ID 是 Shell 身份契约，后续
@@ -42,9 +42,17 @@ COM 接口默认用 `winrt::com_ptr`；HANDLE、HKEY、HICON、HMENU 等经典�
 
 ## 开机启动
 
-使用当前用户的 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`，不要求管理员权限。命令行必须正确引用 EXE 路径；数据目录默认已经便携优先，因此新命令不依赖 `portable.flag`。若用户通过旧命令显式传入 `--portable`，重写开机启动项时继续保留该参数以兼容既有调用，但数据目录无权限时仍允许回退 AppData。仅在用户主动启用时写入；禁用时删除属于 HLaunch 的值。
+托盘图标首次添加失败或 Explorer 重启后暂时不可用时，通过窗口定时器每 500 ms 重试，成功后立即撤销定时器；退出同时撤销。只有托盘注册等待 Explorer，主窗口、快捷键和条目启动不因此延迟。不在登录时为托盘尚未就绪弹出错误对话框。
 
-当前实现以固定 `HLaunch` 注册表值作为状态真相，不在 `config.json` 重复保存。托盘菜单展开时读取该值并显示勾选状态，点击后立即切换；启用时始终用当前 EXE 绝对路径重写命令，可修复程序移动后的旧路径；禁用时只删除该固定值，不影响同一 Run 键中的其他程序。查询失败时禁用菜单项并记录系统错误码，写入失败时显示明确错误。
+使用 Windows Task Scheduler 2.0 当前用户登录任务，名称为 `HLaunch.Logon.<当前用户 SID>`，取代 HKCU Run（决策见 `decisions/ADR-0008-logon-task-startup.md`）。触发器只绑定当前用户 SID，登录触发延迟为 0 秒；使用 `InteractiveToken`、`LeastPrivilege`，不保存密码、不请求管理员权限。任务 `Priority` 显式设为 `6`，对应正常进程优先级，避免计划任务默认的低于正常优先级影响交互响应；该设置不提升权限，也不保证启动顺序。执行文件、参数和工作目录分别设置为当前 EXE 绝对路径、`--autostart`（需要时追加 `--portable`）和 EXE 所在目录。允许电池供电运行，不因切换电池停止；执行时限为 `PT0S`，多实例策略为 `IgnoreNew`。不依赖 Explorer 的 Run 枚举，不改动其他程序的自启。
+
+计划任务是状态真相，不在 `config.json` 重复保存。COM 连接、查询和写入在后台线程完成，结果通过窗口消息回到 UI；菜单显示最近一次结果，展开时异步刷新，修改期间禁用该项。查询检查任务来源、启用状态、当前用户、普通权限、登录触发器、启动参数和 EXE 路径，防止旧路径或禁用任务仍显示勾选。显式启用可重写本程序的任务；禁用同时删除任务和旧 `Run\HLaunch` 值。相同任务名但来源不是 `Hunlongyu.HLaunch` 时拒绝修改。查询错误禁用菜单项并记录错误，修改或迁移错误明确提示。
+
+启动后仅当旧 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 的 `HLaunch` 命令指向当前 EXE 时迁移，保留历史 `--portable` 参数。先成功创建任务再移除旧值；创建失败保留旧值，未启用的用户不自动开启。已有任务不会因迁移而重新启用，迁移可重复执行。`--autostart` 是 HLaunch 自身登录启动标记：第二实例直接退出，不激活或隐藏主实例；不扩展为第三方接口。
+
+迁移时保守检查 Explorer 的旧 `StartupApproved\Run` 记录：缺失或已知启用格式才自动迁移，禁用、损坏或未知格式保留原状，用户仍可从托盘显式启用计划任务。该旧记录不是公开 API，不能扩展解读未知状态。
+
+HLaunch 保持普通权限以保留 Explorer 拖放；条目的“以管理员身份运行”仍使用 Shell `runas`，由 Windows 在需要时请求 UAC。整个启动器的最高权限登录任务不属于本次选择。
 
 ## 显示器与 DPI
 

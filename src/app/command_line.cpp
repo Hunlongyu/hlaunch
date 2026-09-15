@@ -57,6 +57,9 @@ std::expected<StartupOptions, std::wstring> parseCommandLine(
         if (argument == L"--portable") {
             options.portable = true;
         }
+        else if (argument == L"--autostart") {
+            options.autostart = true;
+        }
         else if (argument == L"--show-search") {
             options.showSearch = true;
         }

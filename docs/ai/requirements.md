@@ -16,7 +16,7 @@
 | DATA-CONFIG-001 | schema v1、校验、版本保护与原子写入 | `data-and-config.md`、`schemas/` | 配置语料 + 故障注入集成测试 | 已验证（2026-08-28：memory-codec 覆盖材质、透明度、Grid 行列、诊断日志开关、缺失字段默认值、往返和非法范围，storage 覆盖故障保护；条目与通用配置均使用后台串行/合并保存，配置完成结果携带修订号，最终失败可恢复激活与日志运行时状态；数据根默认创建 EXE 旁 `data` 并通过写入/回读/删除探针及已有配置文件读写检查，失败时回退 `%LOCALAPPDATA%\HLaunch`，两处都不可用时明确失败；条目路径测试覆盖 EXE 目录相对解析、环境变量、URL 原文、便携路径转换、跨盘保留和拒绝当前目录相关路径。当前只有 schema v1，跨版本迁移按产品决定延至首次 schema v2） |
 | PLAT-SINGLE-001 | Mutex 所有权与隐藏窗口激活 | `windows-integration.md` | 双实例 + 完整性级别运行验证 | 部分验证（2026-08-28：同级双实例 hide/show 运行通过；第二实例等待延迟 40 ms 创建的主窗口并成功投递 Toggle、重试耗尽返回 WindowNotFound 的自动测试通过；访问被拒绝、超时和其他投递错误已有明确提示；UIPI 矩阵未验证） |
 | PLAT-TRAY-001 | 托盘显示/隐藏、开机自启、设置、退出与 Explorer 恢复 | `windows-integration.md` | 生命周期集成测试 + Explorer 运行验证 | 部分验证（2026-08-29：真实图标矩形、名称与版本两行悬浮提示、选择回调 Toggle、可勾选开机自启、设置入口、可复用原生设置窗、标准对话框键盘路由和生命周期已实现；菜单结构、标签、勾选与不可用状态由自动测试覆盖；完整菜单人工操作与 Explorer 重启验证未完成） |
-| PLAT-AUTOSTART-001 | 当前用户主动启用或禁用开机启动 | `product-scope.md`、`windows-integration.md` | 注册表集成 + 含空格路径与便携模式运行验证 | 部分验证（2026-08-29：托盘入口、HKCU Run 固定值查询/写入/删除、EXE 路径引用、显式 `--portable` 保留和无关值保护自动测试覆盖；真实登录启动待验证） |
+| PLAT-AUTOSTART-001 | 当前用户主动启用或禁用登录启动 | `product-scope.md`、`windows-integration.md` | Task Scheduler 集成、旧 Run 迁移、实际登录启动 | 部分验证（2026-09-12：普通权限的当前用户登录任务、无额外登录延迟、正常进程优先级、无运行时限、电池运行、特殊字符路径、便携参数、任务禁用、失败保留旧值与无关任务保护由自动测试覆盖；本机手动触发通过，实际重新登录待验证） |
 | PLAT-SHELL-001 | 目标、逻辑参数与工作目录分离并通过 Shell 启动 | `windows-integration.md`、`data-and-config.md` | 参数编解码集成测试 + Windows 运行验证 | 部分验证（2026-08-28：引号边界、无效 UTF-8、可复制完整命令、URL 所在位置拒绝、真实 `ShellExecuteExW` 参数回读、两 Tab 点击启动和稳定 `Hunlongyu.HLaunch` AppUserModelID 查询测试通过；`.lnk` 集成测试创建真实快捷方式并验证快捷方式参数先于条目参数、解析失败时保留直接 Shell 回退；启动、图标、所在位置和复制命令已统一使用 EXE 目录相对路径策略，便携模式保存 EXE 树内相对路径；条目菜单已接入单次 `runas` 和 Explorer 目标选择，文件/文件夹/URL、UAC 取消、Explorer 选中及失效目标人工矩阵未完成） |
 | UIA-001 | 键盘和 UI Automation 可操作 | `accessibility.md` | Narrator + Accessibility Insights | 部分验证（2026-08-29：Grid/Tab/搜索键盘路径、默认无选中、导航键激活焦点、PageUp/PageDown、受选中状态约束的 Enter/`F2`/`Delete`、`Insert`、两阶段 Esc、可见焦点、系统字体和高对比度语义色已实现并完成窗口消息/字体自动测试；Launcher UIA Fragment Provider、Invoke/Selection/SelectionItem 和稳定 Runtime ID 已实现并通过真实 UI Automation 客户端自动测试；Provider 跨线程共享状态已经同步，断开后清除窗口回调，COM 方法以 HRESULT 收口异常；Narrator、Accessibility Insights 和高对比度人工验证未完成） |
 | QUALITY-LOG-001 | 诊断日志受容量、数量、时间和隐私边界约束，并记录关键生命周期及未处理异常 | `quality.md` | 单元测试 + Windows 启动/退出日志验证 | 已验证（2026-08-28：日志测试覆盖净化、容量、数量、过期和异常记录；`diagnostics.loggingEnabled` 默认开启、缺失兼容、关闭值往返、设置窗口启停回调、运行时日志及异常过滤器启停、后台持久化和失败回滚已实现；Debug 便携运行日志覆盖数据加载、窗口/服务创建与正常退出） |
@@ -54,7 +54,9 @@
 
 2026-08-29 设置入口命名补充：v0.1.17 将托盘菜单、Launcher 主菜单和对话框标题统一为“设置”；自动测试锁定主菜单 `设置...\tCtrl+O` 与窗口标题 `HLaunch 设置`。
 
-2026-08-29 `PLAT-AUTOSTART-001` 入口迁移补充：v0.1.18 将开机自启从设置常规页迁移到托盘右键菜单。菜单项使用注册表实时状态显示勾选，点击后立即切换；读取失败时禁用，写入失败时显示错误。设置窗口不再创建开机自启控件，托盘测试锁定菜单顺序、标签、勾选和不可用状态。
+2026-08-29 `PLAT-AUTOSTART-001` 入口迁移补充：v0.1.18 将开机自启从设置常规页迁移到托盘右键菜单。菜单项按实时状态显示勾选，点击后立即切换；读取失败时禁用，写入失败时显示错误。设置窗口不再创建开机自启控件，托盘测试锁定菜单顺序、标签、勾选和不可用状态。
+
+2026-09-12 `PLAT-AUTOSTART-001` 状态源补充：自启状态真相从 HKCU Run 值改为当前用户登录计划任务（`decisions/ADR-0008-logon-task-startup.md`）。托盘菜单勾选改为按任务来源、启用状态、目标用户、权限级别、登录触发器、启动参数和 EXE 路径综合判定，查询与修改仍在后台执行；旧 Run 值只在任务创建成功后迁移。
 
 2026-08-29 `PROD-ITEM-001` / `UI-ICON-001` 删除重加补充：v0.1.19 确认删除条目后，提交不含该条目的 `items.json` 快照，并按条目 UUID 清除内存及磁盘图标缓存；新添加的同名或同路径程序获得新 UUID 和独立缓存，EXE 图标绕过 Shell 路径缓存优先直接重新提取。自动测试覆盖新旧 UUID 缓存隔离、定向删除和退出前清理刷新。
 

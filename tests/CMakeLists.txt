@@ -149,7 +149,7 @@ target_link_libraries(
         doctest::doctest
 )
 
-add_test(NAME PLAT-AUTOSTART-001.registry COMMAND hlaunch_startup_registration_tests)
+add_test(NAME PLAT-AUTOSTART-001.logon-task COMMAND hlaunch_startup_registration_tests)
 
 add_executable(hlaunch_screen_edge_tests screen_edge_tests.cpp)
 

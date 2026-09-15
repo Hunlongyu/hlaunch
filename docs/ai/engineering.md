@@ -58,6 +58,8 @@ Glaze 仅能出现在 `infrastructure/json` 适配层。持久化 DTO 与领域�
 
 发布工具仅使用 Python 标准库、PowerShell、MSVC、CMake、Git 和 GitHub CLI。GitHub Actions 的 checkout/upload-artifact/download-artifact 固定到完整提交 SHA；它们只在 CI 使用，不进入应用运行时，也不改变程序纯本地离线的边界。
 
+登录自启使用 Windows 自带 Task Scheduler 2.0 COM API，由 Platform 目标私有链接 `taskschd` 与 `oleaut32`。接口仍使用 `winrt::com_ptr`，BSTR 使用 WIL RAII；不新增第三方依赖、辅助 EXE、脚本运行时或常驻服务。COM 操作在临时后台线程执行并把结果投递回 UI，完成后线程退出。
+
 ## 窗口效果
 
 - EXE Manifest 依赖 `Microsoft.Windows.Common-Controls` 6.0，进程启动时调用

@@ -17,7 +17,7 @@ Infrastructure ◄── App/Core/Platform
 - `ui`：Launcher、Grid、Tab、Search、Settings、Context Menu；负责输入、布局和呈现。
 - `graphics`：Direct2D、DirectWrite、WIC、设备资源和缓存。
 - `activation`：快捷键、边缘停留、热区、全屏判断；只产生 `ActivationContext`。
-- `platform/windows`：Shell、OLE 拖放、注册表、托盘、DPI、显示器、进程和单实例协调。
+- `platform/windows`：Shell、OLE 拖放、登录计划任务、旧注册表迁移、托盘、DPI、显示器、进程和单实例协调。
 - `infrastructure`：JSON、文件系统、日志与后台调度。
 
 ## 依赖规则

@@ -40,6 +40,9 @@ TrayIcon::~TrayIcon()
 bool TrayIcon::start(const HWND owner, const HICON icon)
 {
     stop();
+    if (!IsWindow(owner)) {
+        return false;
+    }
     taskbarCreatedMessage_ = RegisterWindowMessageW(L"TaskbarCreated");
     if (taskbarCreatedMessage_ == 0) {
         return false;
@@ -57,13 +60,16 @@ bool TrayIcon::start(const HWND owner, const HICON icon)
         tooltip.size() < sizeof(NOTIFYICONDATAW::szTip) / sizeof(wchar_t));
     std::ranges::copy(tooltip, data_.szTip);
     data_.szTip[tooltip.size()] = L'\0';
-    return add();
+    return addOrRetry();
 }
 
 void TrayIcon::stop() noexcept
 {
+    if (data_.hWnd) {
+        KillTimer(data_.hWnd, trayIconRetryTimerId);
+    }
     if (added_) {
-        Shell_NotifyIconW(NIM_DELETE, &data_);
+        notifyIcon_(NIM_DELETE, &data_);
     }
     data_ = {};
     taskbarCreatedMessage_ = 0;
@@ -72,14 +78,20 @@ void TrayIcon::stop() noexcept
 
 std::optional<TrayCommand> TrayIcon::handleMessage(
     const UINT message,
-    WPARAM,
+    const WPARAM wParam,
     const LPARAM lParam,
     const bool launcherVisible,
     const std::optional<bool> startupEnabled)
 {
     if (message == taskbarCreatedMessage_ && taskbarCreatedMessage_ != 0) {
         added_ = false;
-        static_cast<void>(add());
+        static_cast<void>(addOrRetry());
+        return std::nullopt;
+    }
+    if (message == WM_TIMER && wParam == trayIconRetryTimerId && data_.hWnd) {
+        if (!added_) {
+            static_cast<void>(addOrRetry());
+        }
         return std::nullopt;
     }
     if (message != trayIconCallbackMessage || !added_) {
@@ -111,14 +123,24 @@ UINT TrayIcon::taskbarCreatedMessage() const noexcept
 
 bool TrayIcon::add()
 {
-    if (!Shell_NotifyIconW(NIM_ADD, &data_)) {
+    if (!notifyIcon_(NIM_ADD, &data_)) {
         added_ = false;
         return false;
     }
     data_.uVersion = NOTIFYICON_VERSION_4;
-    Shell_NotifyIconW(NIM_SETVERSION, &data_);
+    notifyIcon_(NIM_SETVERSION, &data_);
     added_ = true;
     return true;
+}
+
+bool TrayIcon::addOrRetry()
+{
+    if (add()) {
+        KillTimer(data_.hWnd, trayIconRetryTimerId);
+        return true;
+    }
+    // Only the notification icon waits for Explorer; activation stays usable.
+    return SetTimer(data_.hWnd, trayIconRetryTimerId, 500, nullptr) != 0;
 }
 
 std::optional<TrayCommand> TrayIcon::showContextMenu(

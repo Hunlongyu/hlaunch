@@ -13,6 +13,7 @@ namespace hlaunch::app {
 
 struct StartupOptions {
     bool portable{};
+    bool autostart{};
     bool showSearch{};
     std::optional<platform::windows::ActivationCommand> activation{};
     platform::windows::WindowEffects windowEffects{};

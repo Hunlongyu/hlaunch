@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### 中文
+
+- 开机自启改用登录计划任务，避免 Explorer 重启导致漏启动，并自动迁移旧自启设置。
+- 登录自启保持普通权限和托盘驻留，重复启动不会打断正在使用的窗口。
+- 登录自启不额外等待，以正常优先级运行，桌面未就绪时自动补建托盘图标。
+
+### English
+
+- Use a logon task for startup to avoid missed launches when Explorer restarts, and migrate existing startup settings.
+- Keep logon startup at normal privileges in the tray, without disturbing an already running instance.
+- Start at logon without an added delay, use normal process priority, and retry the tray icon when the desktop is not ready.
+
 ## [0.1.20] - 2026-09-08
 
 ### 中文

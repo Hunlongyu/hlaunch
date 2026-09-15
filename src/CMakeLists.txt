@@ -181,10 +181,12 @@ target_link_libraries(
         dwmapi
         dxgi
         ole32
+        oleaut32
         runtimeobject
         shcore
         shell32
         shlwapi
+        taskschd
         user32
         windowscodecs
 )

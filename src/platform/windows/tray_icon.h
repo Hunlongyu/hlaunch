@@ -14,6 +14,7 @@
 namespace hlaunch::platform::windows {
 
 inline constexpr UINT trayIconCallbackMessage = WM_APP + 0x20;
+inline constexpr UINT_PTR trayIconRetryTimerId = 0x484C0020;
 
 [[nodiscard]] constexpr std::wstring_view trayIconTooltipText() noexcept
 {
@@ -38,7 +39,9 @@ inline constexpr UINT_PTR trayExitMenuId = 4;
 
 class TrayIcon final {
 public:
-    TrayIcon() = default;
+    using NotifyIconFunction = decltype(&Shell_NotifyIconW);
+    explicit TrayIcon(NotifyIconFunction notifyIcon = &Shell_NotifyIconW) noexcept
+        : notifyIcon_(notifyIcon ? notifyIcon : &Shell_NotifyIconW) {}
     ~TrayIcon();
 
     TrayIcon(const TrayIcon&) = delete;
@@ -46,6 +49,7 @@ public:
     TrayIcon(TrayIcon&&) = delete;
     TrayIcon& operator=(TrayIcon&&) = delete;
 
+    // Success means the icon was added or a nonblocking retry was scheduled.
     [[nodiscard]] bool start(HWND owner, HICON icon);
     void stop() noexcept;
 
@@ -60,6 +64,7 @@ public:
 
 private:
     [[nodiscard]] bool add();
+    [[nodiscard]] bool addOrRetry();
     [[nodiscard]] std::optional<TrayCommand> showContextMenu(
         bool launcherVisible,
         std::optional<bool> startupEnabled);
@@ -67,6 +72,7 @@ private:
     NOTIFYICONDATAW data_{};
     UINT taskbarCreatedMessage_{};
     bool added_{};
+    NotifyIconFunction notifyIcon_;
 };
 
 } // namespace hlaunch::platform::windows

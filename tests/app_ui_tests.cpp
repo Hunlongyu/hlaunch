@@ -766,6 +766,27 @@ TEST_CASE("PLAT-SINGLE-001 command line maps activation commands without "
     CHECK(*options->activation == hlaunch::platform::windows::ActivationCommand::Toggle);
 }
 
+TEST_CASE("PLAT-AUTOSTART-001 logon startup stays separate from explicit activation")
+{
+    constexpr std::array arguments{
+        std::wstring_view{L"--autostart"},
+        std::wstring_view{L"--portable"},
+    };
+    const auto options = hlaunch::app::parseCommandLine(arguments);
+    REQUIRE(options.has_value());
+    CHECK(options->autostart);
+    CHECK(options->portable);
+    CHECK_FALSE(options->activation.has_value());
+
+    constexpr std::array explicitActivation{
+        std::wstring_view{L"--autostart"},
+        std::wstring_view{L"--show"},
+    };
+    const auto explicitOptions = hlaunch::app::parseCommandLine(explicitActivation);
+    REQUIRE(explicitOptions.has_value());
+    CHECK(explicitOptions->activation == hlaunch::platform::windows::ActivationCommand::Show);
+}
+
 TEST_CASE("PLAT-SINGLE-001 command line rejects unknown options")
 {
     constexpr std::array arguments{std::wstring_view{L"--unknown"}};
