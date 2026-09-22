@@ -204,7 +204,8 @@ TEST_CASE("PROD-DROP-001 resolves supported sources in their original order")
     CHECK(result.items[1].name == "Tool");
     CHECK(result.items[2].type == hlaunch::core::ItemType::Application);
     CHECK(result.items[2].name == "Shortcut");
-    CHECK(result.items[2].target == toUtf8(executable));
+    // Shell may expand an 8.3 path from TEMP while resolving the shortcut.
+    CHECK(std::filesystem::equivalent(fromUtf8(result.items[2].target), executable));
     CHECK(result.items[3].type == hlaunch::core::ItemType::File);
     CHECK(result.items[3].name == "notes.txt");
     CHECK(result.items[4].type == hlaunch::core::ItemType::Url);
