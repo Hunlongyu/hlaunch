@@ -8,6 +8,7 @@
 #include "platform/windows/drop_target.h"
 #include "platform/windows/icon_loader.h"
 #include "platform/windows/item_path_policy.h"
+#include "platform/windows/popup_input_monitor.h"
 #include "platform/windows/window_effects.h"
 #include "ui/item_editor_dialog.h"
 #include "ui/launcher_accessibility.h"
@@ -71,7 +72,7 @@ public:
     void setItemEditorHandler(ItemEditorHandler handler);
     void setSettingsHandler(SettingsHandler handler);
     void show();
-    void showAtScreenEdge(const activation::ScreenEdgeHit& hit);
+    void showAtScreenEdge(const activation::ScreenEdgeHit& hit, bool requestForeground = true);
     void hide();
     void toggle();
     void close();
@@ -98,6 +99,9 @@ private:
     void renderDragPreview();
     void positionOnCursorMonitor();
     void positionOnScreenEdge(const activation::ScreenEdgeHit& hit);
+    void showPopup(bool requestForeground = true);
+    void handleOutsidePointerDown(POINT screenPoint);
+    [[nodiscard]] bool autoHideProtected() const noexcept;
     void positionSearchWindow();
     void createItemTooltip(HINSTANCE instance);
     void showItemTooltip();
@@ -227,6 +231,10 @@ private:
     bool windowFocused_{};
     std::wstring accessibilityFocusKey_{L"root"};
     bool windowPinned_{};
+    platform::windows::PopupInputMonitor popupInput_{};
+    unsigned menuLoopDepth_{};
+    DWORD menuExitedAt_{};
+    bool menuExitRecorded_{};
     std::uint16_t gridColumns_{core::defaultLauncherGridColumns};
     std::uint16_t gridRows_{core::defaultLauncherGridRows};
     LauncherMetrics metrics_{};

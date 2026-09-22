@@ -2,6 +2,7 @@
 
 #include "core/item_operations.h"
 #include "core/data_validation.h"
+#include "infrastructure/logging/diagnostic_log.h"
 #include "platform/windows/shell_launcher.h"
 #include "platform/windows/search_text.h"
 #include "platform/windows/uuid.h"
@@ -325,7 +326,7 @@ bool LauncherWindow::create(
     const auto x = workArea.left + ((workArea.right - workArea.left - width) / 2);
     const auto y = workArea.top + ((workArea.bottom - workArea.top - height) / 2);
     window_ = CreateWindowExW(
-        WS_EX_TOOLWINDOW,
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
         launcherWindowClass,
         L"HLaunch",
         WS_POPUP,
@@ -501,44 +502,48 @@ void LauncherWindow::show()
     if (!isVisible()) {
         positionOnCursorMonitor();
     }
-    ShowWindow(window_, SW_SHOWNORMAL);
-    if (searchVisible_) {
-        positionSearchWindow();
-        searchWindow_.show();
-    }
-    else {
-        searchWindow_.hide();
-    }
-    SetForegroundWindow(window_);
-    if (searchVisible_) {
-        SetFocus(searchWindow_.handle());
-    }
-    else {
-        SetFocus(window_);
-    }
-    keyboardSelectionActive_ = false;
-    accessibilityFocusKey_ = std::wstring{accessibleRootKey};
-    InvalidateRect(window_, nullptr, FALSE);
+    showPopup();
 }
 
-void LauncherWindow::showAtScreenEdge(const activation::ScreenEdgeHit& hit)
+void LauncherWindow::showAtScreenEdge(const activation::ScreenEdgeHit& hit, const bool requestForeground)
 {
     positionOnScreenEdge(hit);
-    ShowWindow(window_, SW_SHOWNORMAL);
+    showPopup(requestForeground);
+}
+
+void LauncherWindow::showPopup(const bool requestForeground)
+{
+    KillTimer(window_, autoHideTimer);
+    popupInput_.start(window_);
+    // Visibility/z-order must not depend on Windows granting foreground focus.
+    if (!SetWindowPos(window_, HWND_TOPMOST, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW)) {
+        infrastructure::logging::writeSystemError(infrastructure::logging::Level::Warning,
+            "popup_show_failed", GetLastError());
+    }
+    const HWND foreground = GetForegroundWindow();
+    const bool ownedInteraction = foreground != window_
+        && platform::windows::belongsToPopup(foreground, window_);
+    // An edge hit while a settings/editor dialog is open must not steal its focus.
+    const bool mayFocus = requestForeground && IsWindowEnabled(window_) && !ownedInteraction;
+    const bool foregroundGranted = mayFocus
+        && (foreground == window_ || SetForegroundWindow(window_) != FALSE);
     if (searchVisible_) {
         positionSearchWindow();
-        searchWindow_.show();
+        searchWindow_.show(foregroundGranted);
     }
     else {
         searchWindow_.hide();
     }
-    SetForegroundWindow(window_);
-    if (searchVisible_) {
+    if (foregroundGranted && searchVisible_) {
         SetFocus(searchWindow_.handle());
     }
-    else {
+    else if (foregroundGranted) {
         SetFocus(window_);
     }
+    infrastructure::logging::write(infrastructure::logging::Level::Debug,
+        foregroundGranted ? "popup_shown foreground=granted"
+                          : "popup_shown foreground=unchanged");
     keyboardSelectionActive_ = false;
     accessibilityFocusKey_ = std::wstring{accessibleRootKey};
     InvalidateRect(window_, nullptr, FALSE);
@@ -699,6 +704,8 @@ bool LauncherWindow::applyGridSizeChange(const LauncherGridSize gridSize)
 
 void LauncherWindow::hide()
 {
+    KillTimer(window_, autoHideTimer);
+    popupInput_.stop();
     clearHover();
     cancelTabDrag();
     cancelItemDrag();
@@ -711,6 +718,7 @@ void LauncherWindow::hide()
     searchWindow_.setQuery({});
     searchWindow_.hide();
     ShowWindow(window_, SW_HIDE);
+    infrastructure::logging::write(infrastructure::logging::Level::Debug, "popup_hidden");
 }
 
 void LauncherWindow::hideAfterSuccessfulLaunchIfNeeded()
@@ -900,17 +908,44 @@ LRESULT LauncherWindow::handleMessage(
         if (LOWORD(wParam) == WA_INACTIVE) {
             scheduleAutoHide();
         }
-        else {
+        else if (platform::windows::belongsToPopup(GetForegroundWindow(), window_)) {
             KillTimer(window_, autoHideTimer);
         }
+        return 0;
+    case WM_ACTIVATEAPP:
+        if (!wParam) scheduleAutoHide();
+        return 0;
+    case WM_ENABLE:
+        if (wParam) scheduleAutoHide();
+        return 0;
+    case platform::windows::popupForegroundChangedMessage:
+        if (popupInput_.acceptsForegroundEvent(wParam)) scheduleAutoHide();
+        return 0;
+    case WM_INPUT:
+        if (const auto point = popupInput_.pointerDown(reinterpret_cast<HRAWINPUT>(lParam))) {
+            // A menu may consume a click before its queued WM_INPUT is dispatched.
+            const bool menuClick = menuExitRecorded_
+                && static_cast<std::int32_t>(static_cast<DWORD>(GetMessageTime()) - menuExitedAt_) <= 0;
+            if (!menuClick) handleOutsidePointerDown(*point);
+        }
+        return DefWindowProcW(window, message, wParam, lParam);
+    case WM_ENTERMENULOOP:
+        ++menuLoopDepth_;
+        KillTimer(window_, autoHideTimer);
+        return 0;
+    case WM_EXITMENULOOP:
+        if (menuLoopDepth_ != 0) --menuLoopDepth_;
+        menuExitedAt_ = GetTickCount();
+        menuExitRecorded_ = true;
+        scheduleAutoHide();
         return 0;
     case WM_TIMER:
         if (wParam == autoHideTimer) {
             KillTimer(window_, autoHideTimer);
-            if (!windowPinned_ && isVisible()) {
-                DWORD foregroundProcess{};
-                GetWindowThreadProcessId(GetForegroundWindow(), &foregroundProcess);
-                if (foregroundProcess != GetCurrentProcessId()) {
+            if (!windowPinned_ && isVisible() && !autoHideProtected()) {
+                if (!platform::windows::belongsToPopup(GetForegroundWindow(), window_)) {
+                    infrastructure::logging::write(infrastructure::logging::Level::Debug,
+                        "popup_dismiss reason=foreground_changed");
                     hide();
                 }
             }
@@ -1207,6 +1242,7 @@ LRESULT LauncherWindow::handleMessage(
         if (itemDragSource_ && reinterpret_cast<HWND>(lParam) != window_) { // NOLINT(performance-no-int-to-ptr): WM_CAPTURECHANGED defines LPARAM as HWND.
             cancelItemDrag();
         }
+        scheduleAutoHide();
         return 0;
     case WM_RBUTTONUP: {
         RECT client{};
@@ -1415,6 +1451,7 @@ LRESULT LauncherWindow::handleMessage(
         hide();
         return 0;
     case WM_DESTROY:
+        popupInput_.stop();
         hideItemTooltip();
         cancelTabDrag();
         cancelItemDrag();
@@ -3197,15 +3234,23 @@ void LauncherWindow::toggleWindowPin()
 {
     windowPinned_ = !windowPinned_;
     KillTimer(window_, autoHideTimer);
-    SetWindowPos(
-        window_,
-        windowPinned_ ? HWND_TOPMOST : HWND_NOTOPMOST,
-        0,
-        0,
-        0,
-        0,
-        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     InvalidateRect(window_, nullptr, FALSE);
+}
+
+bool LauncherWindow::autoHideProtected() const noexcept
+{
+    return menuLoopDepth_ != 0 || !IsWindowEnabled(window_)
+        || platform::windows::belongsToPopup(GetCapture(), window_);
+}
+
+void LauncherWindow::handleOutsidePointerDown(const POINT screenPoint)
+{
+    if (!isVisible() || windowPinned_ || autoHideProtected()) return;
+    const HWND clickedWindow = WindowFromPoint(screenPoint);
+    if (platform::windows::belongsToPopup(clickedWindow, window_)) return;
+    infrastructure::logging::write(infrastructure::logging::Level::Debug,
+        "popup_dismiss reason=outside_click");
+    hide();
 }
 
 void LauncherWindow::scheduleAutoHide()
@@ -3850,7 +3895,7 @@ std::vector<LauncherAccessibleNode> LauncherWindow::accessibilitySnapshot() cons
     addButton(accessibleMenuKey, L"主菜单", layout.menuButton);
     addButton(
         accessiblePinKey,
-        windowPinned_ ? L"取消置顶窗口" : L"置顶窗口",
+        windowPinned_ ? L"取消保持打开" : L"保持打开",
         layout.pinButton);
     addButton(accessibleCloseKey, L"隐藏 HLaunch", layout.closeButton);
     nodes.push_back({

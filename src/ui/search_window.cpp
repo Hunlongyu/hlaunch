@@ -140,10 +140,10 @@ void SearchWindow::refreshSystemAppearance()
     RedrawWindow(window_, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
 }
 
-void SearchWindow::show()
+void SearchWindow::show(const bool takeFocus)
 {
     ShowWindow(window_, SW_SHOWNOACTIVATE);
-    SetFocus(edit_ ? edit_ : window_);
+    if (takeFocus) SetFocus(edit_ ? edit_ : window_);
     if (edit_) {
         const auto end = static_cast<LPARAM>(query_.size());
         SendMessageW(edit_, EM_SETSEL, end, end);

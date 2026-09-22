@@ -140,6 +140,8 @@ add_library(
         platform/windows/icon_pixel_converter.h
         platform/windows/item_path_policy.cpp
         platform/windows/item_path_policy.h
+        platform/windows/popup_input_monitor.cpp
+        platform/windows/popup_input_monitor.h
         platform/windows/shell_icon_extractor.cpp
         platform/windows/shell_icon_extractor.h
         platform/windows/screen_edge_activation.cpp
@@ -176,6 +178,7 @@ target_link_libraries(
         HLaunch::Activation
         HLaunch::Dependencies
     PRIVATE
+        HLaunch::InfrastructureLogging
         HLaunch::ProjectOptions
         advapi32
         d2d1
@@ -241,6 +244,7 @@ target_link_libraries(
         HLaunch::Core
         HLaunch::PlatformWindows
     PRIVATE
+        HLaunch::InfrastructureLogging
         HLaunch::Dependencies
         HLaunch::ProjectOptions
         comctl32

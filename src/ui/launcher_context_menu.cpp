@@ -17,7 +17,7 @@ wil::unique_hmenu createLauncherContextMenu(const bool pinned)
     if (!menu
         || !append(menu.get(), MF_STRING | (pinned ? MF_CHECKED : 0U),
                    static_cast<UINT_PTR>(LauncherContextCommand::TogglePin),
-                   L"置顶窗口\tCtrl+Space")
+                   L"保持打开\tCtrl+Space")
         || !append(menu.get(), MF_STRING,
                    static_cast<UINT_PTR>(LauncherContextCommand::Search),
                    L"搜索项目\tCtrl+F")

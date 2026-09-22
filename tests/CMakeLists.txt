@@ -126,6 +126,12 @@ target_link_libraries(
 
 add_test(NAME PLAT-SINGLE-001.PROD-GRID-001.scaffold COMMAND hlaunch_app_ui_tests)
 
+# Requires an interactive desktop and moves the pointer to its own test windows.
+# Run explicitly; do not include it in unattended CTest/release runs.
+add_executable(hlaunch_popup_interaction_tests popup_interaction_tests.cpp)
+target_link_libraries(hlaunch_popup_interaction_tests PRIVATE
+    HLaunch::UI HLaunch::ProjectOptions ole32)
+
 add_executable(hlaunch_global_hotkey_tests global_hotkey_tests.cpp)
 
 target_link_libraries(

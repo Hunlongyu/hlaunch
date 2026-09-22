@@ -171,7 +171,7 @@ TEST_CASE("PROD-ITEM-001 copies Unicode item text through the Windows clipboard"
     GlobalUnlock(static_cast<HGLOBAL>(storage));
 }
 
-TEST_CASE("PROD-GRID-001 pin button toggles topmost state")
+TEST_CASE("PROD-GRID-001 popup stays topmost while pin only controls dismissal")
 {
     hlaunch::ui::LauncherWindow launcher{};
     REQUIRE(launcher.create(
@@ -180,15 +180,68 @@ TEST_CASE("PROD-GRID-001 pin button toggles topmost state")
     const auto layout = launcherLayoutFor(launcher.handle(), 0U);
     const auto pinPoint = centerInPixels(launcher.handle(), layout.pinButton);
 
-    CHECK((GetWindowLongPtrW(launcher.handle(), GWL_EXSTYLE) & WS_EX_TOPMOST) == 0);
-    SendMessageW(
-        launcher.handle(), WM_LBUTTONUP, 0, MAKELPARAM(pinPoint.x, pinPoint.y));
+    launcher.show();
     CHECK((GetWindowLongPtrW(launcher.handle(), GWL_EXSTYLE) & WS_EX_TOPMOST) != 0);
     SendMessageW(
         launcher.handle(), WM_LBUTTONUP, 0, MAKELPARAM(pinPoint.x, pinPoint.y));
-    CHECK((GetWindowLongPtrW(launcher.handle(), GWL_EXSTYLE) & WS_EX_TOPMOST) == 0);
+    CHECK((GetWindowLongPtrW(launcher.handle(), GWL_EXSTYLE) & WS_EX_TOPMOST) != 0);
+    launcher.hideAfterSuccessfulLaunchIfNeeded();
+    CHECK(launcher.isVisible());
+    SendMessageW(
+        launcher.handle(), WM_LBUTTONUP, 0, MAKELPARAM(pinPoint.x, pinPoint.y));
+    CHECK((GetWindowLongPtrW(launcher.handle(), GWL_EXSTYLE) & WS_EX_TOPMOST) != 0);
+    launcher.hideAfterSuccessfulLaunchIfNeeded();
+    CHECK_FALSE(launcher.isVisible());
 
     launcher.close();
+    clearPendingQuitMessages();
+}
+
+TEST_CASE("UI-POPUP-001 dismissal recognizes owned dialogs and releases raw input on hide")
+{
+    hlaunch::ui::LauncherWindow launcher{};
+    REQUIRE(launcher.create(GetModuleHandleW(nullptr), {}, false, {},
+        [](const hlaunch::core::LaunchItem&) {}));
+    const HWND settings = CreateWindowExW(0, L"STATIC", L"Owned settings",
+        WS_POPUP, 0, 0, 100, 100, launcher.handle(), nullptr, GetModuleHandleW(nullptr), nullptr);
+    const auto closeSettings = wil::scope_exit([&] { DestroyWindow(settings); });
+    const HWND child = CreateWindowExW(0, L"BUTTON", L"Settings control", WS_CHILD,
+        0, 0, 50, 20, settings, nullptr, GetModuleHandleW(nullptr), nullptr);
+    const HWND filePicker = CreateWindowExW(0, L"STATIC", L"Nested picker", WS_POPUP,
+        0, 0, 100, 100, settings, nullptr, GetModuleHandleW(nullptr), nullptr);
+    const auto closePicker = wil::scope_exit([&] { DestroyWindow(filePicker); });
+    const HWND unrelated = CreateWindowExW(0, L"STATIC", L"Unrelated window", WS_POPUP,
+        0, 0, 100, 100, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    const auto closeUnrelated = wil::scope_exit([&] { DestroyWindow(unrelated); });
+    REQUIRE(settings != nullptr);
+    REQUIRE(child != nullptr);
+    REQUIRE(filePicker != nullptr);
+    REQUIRE(unrelated != nullptr);
+    using hlaunch::platform::windows::belongsToPopup;
+    CHECK(belongsToPopup(launcher.handle(), launcher.handle()));
+    CHECK(belongsToPopup(child, launcher.handle()));
+    CHECK(belongsToPopup(filePicker, launcher.handle()));
+    CHECK_FALSE(belongsToPopup(unrelated, launcher.handle()));
+    CHECK_FALSE(belongsToPopup(nullptr, launcher.handle()));
+
+    const auto mouseTarget = []() -> HWND {
+        UINT count{};
+        if (GetRegisteredRawInputDevices(nullptr, &count, sizeof(RAWINPUTDEVICE)) == UINT(-1)) return nullptr;
+        std::vector<RAWINPUTDEVICE> devices(count);
+        if (count && GetRegisteredRawInputDevices(devices.data(), &count, sizeof(RAWINPUTDEVICE)) == UINT(-1)) return nullptr;
+        for (const auto& device : devices) {
+            if (device.usUsagePage == 1 && device.usUsage == 2) return device.hwndTarget;
+        }
+        return nullptr;
+    };
+    launcher.show();
+    CHECK(mouseTarget() == launcher.handle());
+    launcher.hide();
+    CHECK(mouseTarget() == nullptr);
+    launcher.show();
+    CHECK(mouseTarget() == launcher.handle());
+    launcher.close();
+    CHECK(mouseTarget() == nullptr);
     clearPendingQuitMessages();
 }
 
@@ -240,7 +293,7 @@ TEST_CASE("PROD-GRID-001 launcher chrome empty slots and tabs expose separate "
     std::array<wchar_t, 64> pinLabel{};
     REQUIRE(GetMenuStringW(
         launcher.get(), 0, pinLabel.data(), static_cast<int>(pinLabel.size()), MF_BYPOSITION) > 0);
-    CHECK(std::wstring_view{pinLabel.data()}.starts_with(L"置顶窗口"));
+    CHECK(std::wstring_view{pinLabel.data()}.starts_with(L"保持打开"));
     CHECK(GetMenuItemID(launcher.get(), 4) ==
           static_cast<UINT>(hlaunch::ui::LauncherContextCommand::Settings));
     std::array<wchar_t, 64> settingsLabel{};

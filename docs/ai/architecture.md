@@ -50,6 +50,7 @@ HotkeyTrigger / EdgeDwellTrigger
 ## 线程模型
 
 - UI 主线程拥有消息循环、HWND、输入、布局、渲染和动画。
+- 弹出面板显示期间，`PopupInputMonitor` 在所属 UI 线程注册 Raw Input 鼠标输入和 out-of-context 前台 WinEvent。Raw Input 由窗口消息循环消费；WinEvent 回调只投递带显示周期标识的通知。平台层判断窗口 owner 链，UI 层决定是否收起；隐藏或销毁时注销，过期通知不能影响下一次显示。该观察器不替换原有边缘位置采样，不截获外部点击，也不修改系统前台锁策略。
 - 图标提取、磁盘 I/O 和较重 Shell 查询在后台执行。
 - 快捷方式导入由 Application 传入数据根下 `shortcuts/`，UI 将目录交给后台拖放解析器。Windows 平台适配负责 COM 解析与必要副本持久化，成功完成后只向 UI 投递领域条目；副本写入失败不得发布依赖原链接的条目。
 - 后台任务不可直接操作 HWND、Direct2D 窗口资源或 UI 集合；通过自定义窗口消息或调度器把不可变结果投递到 UI 线程。

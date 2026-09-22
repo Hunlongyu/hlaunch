@@ -38,7 +38,7 @@ public:
         KeyHandler keyHandler);
     void setWindowEffects(const platform::windows::WindowEffects& effects);
     void refreshSystemAppearance();
-    void show();
+    void show(bool takeFocus = true);
     void positionAttached(HWND owner, UINT dpi, const SearchPopupLayout& layout);
     void hide();
     void setQuery(std::wstring query);
